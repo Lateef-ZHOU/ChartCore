@@ -4,12 +4,12 @@ include(FetchContent)
 if(NOT TARGET Lidar::Algorithm)
     FetchContent_Declare(lidar_algorithm
         GIT_REPOSITORY https://github.com/Lateef-ZHOU/Algorithm.git
-        GIT_TAG ce55feae3ef405e1cd85ad97d24eb946dd49a82d)
+        GIT_TAG 00244abaf8fdabb6ad6bf2d2b875af4e60522a4f)
     FetchContent_MakeAvailable(lidar_algorithm)
 endif()
 if(NOT TARGET Lidar::UICore)
     FetchContent_Declare(lidar_uicore
         GIT_REPOSITORY https://github.com/Lateef-ZHOU/UICore.git
-        GIT_TAG a305f0a16fc237db42da1e417582ea9650aa6e6f)
+        GIT_TAG bf646946b884e362ee4bd10225ebb1ff16bdcd63)
     FetchContent_MakeAvailable(lidar_uicore)
 endif()
