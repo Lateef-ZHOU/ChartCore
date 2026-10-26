@@ -39,7 +39,7 @@ target_link_libraries(my_app PRIVATE Lidar::ChartCore)
 
 界面是静态 QML 插件；应用还须链接 `LidarUICoreplugin LidarChartCoreplugin`，并在一个 C++ 源文件包含 `<QtQml/QQmlExtensionPlugin>`，分别写 `Q_IMPORT_QML_PLUGIN(LidarUIPlugin)`、`Q_IMPORT_QML_PLUGIN(LidarChartsPlugin)`。QML 使用 `import Lidar.UI` 和 `import Lidar.Charts`。完整最小示例见 tests/smoke.cpp。
 
-构建工具/部署工具的 QML 导入根目录，由目标的 `QT_QML_OUTPUT_DIRECTORY` 向上两级取得；不要假定上游仓库与本仓库相邻。
+构建工具/部署工具的 QML 导入根目录，由目标的 `QT_QML_MODULE_OUTPUT_DIRECTORY` 向上两级取得；不要假定上游仓库与本仓库相邻。
 
 ## 来源与许可
 
