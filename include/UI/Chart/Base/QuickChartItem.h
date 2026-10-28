@@ -1,4 +1,5 @@
 #pragma once
+#include <QSignalBlocker>
 #include <QtQml/qqmlregistration.h>
 #include <algorithm>
 #include <cmath>
@@ -293,6 +294,26 @@ public:
         refresh();
     }
 
+    // 时间图纵向排列时共用横轴。连同数据时间锚一起接收，后续布局/缩放仍在同一时间窗内。
+    // 不回发联动信号；已有动画只替换横向轨迹，保留本图的纵向动画。
+    Q_INVOKABLE void applyXView(const double lo, const double hi, const bool follow, const double anchor)
+    {
+        xAxis_.lo = lo;
+        xAxis_.hi = hi;
+        xAxis_.follow = follow;
+        lastX_ = anchor;
+        if (gliding()) {
+            const QSignalBlocker blocker(&glide_);
+            auto start = glide_.startValue().toRectF();
+            auto end = glide_.endValue().toRectF();
+            start.setX(lo); start.setWidth(hi);
+            end.setX(lo); end.setWidth(hi);
+            glide_.setStartValue(start);
+            glide_.setEndValue(end);
+        }
+        refresh();
+    }
+
 private:
     // [主] 双击复位：两轴交还给数据，重新跟随。
     void resetView()
@@ -346,6 +367,7 @@ Q_SIGNALS:
     void hoverEnded();
     // 本图的**纵轴区间**变了（缩放或复位）。并排共用纵轴时接到对方的 applyYView。
     void yViewChanged(double lo, double hi, bool follow);
+    void xViewChanged(double lo, double hi, bool follow, double anchor);
 
 protected:
     static constexpr double kMarginWide = 64.0;   // 有刻度文字与轴标题的那一侧
@@ -573,6 +595,7 @@ protected:
         clampView(x, y);
         xAxis_ = x;
         yAxis_ = y;
+        Q_EMIT xViewChanged(xAxis_.lo, xAxis_.hi, xAxis_.follow, lastX_);
         Q_EMIT yViewChanged(yAxis_.lo, yAxis_.hi, yAxis_.follow); // 钳位之后再发，对面拿到的才是定稿
         refresh();
     }
@@ -594,6 +617,7 @@ protected:
 
     void reconcile()
     {
+        const auto previousX = xAxis_;
         if (!plotRect().isEmpty())
         {
             clampView(xAxis_, yAxis_);
@@ -605,6 +629,9 @@ protected:
                 glide_.setEndValue(rectOf(tx, ty)); // 改终点不重起：Qt 下一帧按新终点重算插值
             }
         }
+        // 仅实际改变的区间参与联动；同一批数据送到其他面板时，不把原样区间反推回动画发起者。
+        if (previousX.lo != xAxis_.lo || previousX.hi != xAxis_.hi || previousX.follow != xAxis_.follow)
+            Q_EMIT xViewChanged(xAxis_.lo, xAxis_.hi, xAxis_.follow, lastX_);
         refresh();
     }
 
@@ -638,10 +665,13 @@ protected:
     void onGlideValue(const QVariant &v)
     {
         const QRectF r = v.toRectF();
+        const bool xChanged = xAxis_.lo != r.x() || xAxis_.hi != r.width();
         xAxis_.lo = r.x();
         xAxis_.hi = r.width();
         yAxis_.lo = r.y();
         yAxis_.hi = r.height();
+        if (xChanged)
+            Q_EMIT xViewChanged(xAxis_.lo, xAxis_.hi, xAxis_.follow, lastX_);
         Q_EMIT yViewChanged(yAxis_.lo, yAxis_.hi, yAxis_.follow);
         refresh();
     }

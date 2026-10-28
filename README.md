@@ -41,6 +41,42 @@ target_link_libraries(my_app PRIVATE Lidar::ChartCore)
 
 构建工具/部署工具的 QML 导入根目录，由目标的 `QT_QML_MODULE_OUTPUT_DIRECTORY` 向上两级取得；不要假定上游仓库与本仓库相邻。
 
+## 激光器三组趋势图（2026-10-28 用户定）
+
+`LaserTelemetryChart.qml` 暂作为专用图种放在 ChartCore，纵向排列三幅图：温度（激光器、MCU）、电流（PA1、PA2、PA3）、电压（系统电压）。复用 SeriesChart 的折线、图例、抽稀和手势；AngleChart 与风速/CNR 图保持各自接口，暂不合并成通用多图框架。后续是否统一 Plot 接口仍待定。
+
+```qml
+import Lidar.Charts
+LaserTelemetryChart {
+    id: trends
+    anchors.fill: parent
+    configuration: ({ windowSeconds: 120, capacity: 132,
+        temperature: { minimum: 0, maximum: 80 },
+        current:     { minimum: 0, maximum: 10 },
+        voltage:     { minimum: 20, maximum: 30 } })
+}
+```
+
+配置仅在创建时交入：时间窗单位秒，capacity 是**每条曲线**最多保留的点数；三个纵轴范围分别为 °C、A、V。示例范围只是演示值，不代表设备额定范围、限值或报警条件，接入官邸时应按使用需求给定。曲线保存原数值，超出显示范围的部分裁剪显示；不钳制或改写测量值。
+
+官邸将回复解析为本次测量值后调用 `trends.append(at, values)`：
+
+| values 字段 | 曲线 | 单位 |
+| --- | --- | --- |
+| laserTemperature / mcuTemperature | 激光器 / MCU 温度 | °C |
+| pa1Current / pa2Current / pa3Current | PA1 / PA2 / PA3 电流 | A |
+| voltage | 系统电压 | V |
+
+`at` 原样转交 C++ 的 RxTime，只有绘图器转为横轴秒数。values 是数值映射，例如 `{voltage: 24.1}`；不要求每次凑齐六项。缺字段不追加点，也不补零或把旧值标成新采样；显式 NaN 表示断点。各曲线保留自己的采样时刻，悬停读数显示光标之前最近的回报及其时刻。容量按点数裁剪，不因墙钟跳变成批清空。QML 不持第二份历史。
+
+三图同步时间轴的跟随、平移、缩放、复位与悬停；纵轴分别调整。裸滚轮缩放当前图两轴，Shift+滚轮只缩放公共时间轴，Ctrl+滚轮只缩放当前纵轴，拖动平移，双击复位当前纵轴并恢复公共时间轴跟随。隐藏期间继续接收历史，恢复后直接绘制。
+
+一个图窗只表示一个观察对象；官邸按回复所属模块路由数据，不按当前单选按钮错误归类。切换对象可明确调用 `clear()` 清空历史/悬停（保留视口），或分别装配种子/放大模块图窗。图表不持设备、不认识寄存器、不做轮询，也不会因空白、旧值或收到数据而发出任何查询。模块路由、响应式查询及激光器 QML 官邸接线仍由设备仓库后续实现。
+
+独立演示：构建后运行 `build/tests/laser_telemetry --preview`（Windows 为 `build/tests/Release/laser_telemetry.exe --preview`，需 Qt bin 在 PATH）。演示源只在测试程序中，每秒生成六项数据，不连接设备；`--capture image.png` 保存实际渲染画面。常规 CTest 使用离屏模式，检查部分字段、容量、单位分组、QML 转交 RxTime、横轴手势联动、独立纵轴、隐藏恢复及 8 秒运行；原 Surface 冒烟继续执行。
+
+2026-10-28 本轮验证：Windows / MSVC 19.51 / Qt 6.11.2 与 Linux / GCC 16.2.1 / Qt 6.12.0，Release 构建和 public_headers 独立单头编译通过，编译器零警告；CTest 各 2/2，通过 39 项趋势图检查及原角度图、风速/CNR、Surface 装配。两端 CMake qmllint 目标通过，新图无诊断；既有文件仍有 unused-import 提示，Qt 6.12 还提示 Surface 的 state 命名遮蔽。Windows 离屏字体扫描有 FreeType 字体提示；独立 D3D11 / 4× MSAA 渲染截图无该提示，已检查实际布局。未连接激光器，未作硬件测量验证；本轮未更新应用固定依赖或推送仓库。
+
 ## 来源与许可
 
 从 [LiDAR_DataACQ](https://github.com/Lateef-ZHOU/LiDAR_DataACQ) 的模块分离提交 `94ad6f8` 提取；初始分仓保持运行逻辑，独立整理构建、验证与发布入口。
