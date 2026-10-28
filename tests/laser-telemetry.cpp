@@ -24,6 +24,7 @@ class Source : public QObject
     Q_OBJECT
 Q_SIGNALS:
     void measurement(RxTime at, const QVariantMap &values);
+    void delivered(bool accepted);
 };
 
 class Probe : public LaserTelemetryItem
@@ -77,16 +78,16 @@ int main(int argc, char **argv)
         item.setSize({800, 240});
         check(item.series().size() == 2, "temperature has two curves");
         item.append(now, {{"laserTemperature", 25.125}});
-        check(item.series()[0].points.size() == 1 && item.series()[1].points.isEmpty(), "missing is not zero or old value");
+        check(item.series()[0].points.isEmpty() && item.series()[1].points.isEmpty(), "incomplete panel snapshot rejected without partial append");
+        item.append(now, {{"laserTemperature", 25.125}, {"mcuTemperature", std::numeric_limits<double>::quiet_NaN()}});
         check(item.series()[0].points[0] == QPointF(epoch, 25.125), "typed time and fractional value preserved");
-        item.append(now, {{"mcuTemperature", 32.0}});
-        check(item.series()[0].points.size() == 1 && item.series()[1].points.size() == 1, "split readings independent");
-        item.append(now, {{"mcuTemperature", std::numeric_limits<double>::quiet_NaN()}});
-        check(std::isnan(item.series()[1].points.last().y()), "explicit gap preserved");
+        check(item.series()[0].points.size() == 1 && item.series()[1].points.size() == 1, "unknown values still occupy aligned sample row");
+        check(std::isnan(item.series()[1].points.last().y()), "unknown value is a gap, not zero");
         for (int i = 1; i <= 5; ++i)
-            item.append(now + std::chrono::seconds(i), {{"laserTemperature", double(i)}});
+            item.append(now + std::chrono::seconds(i), {{"laserTemperature", double(i)}, {"mcuTemperature", 32.0}});
         check(item.series()[0].points.size() == 3 && item.series()[0].points.first().y() == 3, "history bounded per curve");
-        check(item.series()[1].points.size() == 2, "other channel history not fabricated");
+        check(item.series()[1].points.size() == 3 && item.series()[1].points.first().x() == item.series()[0].points.first().x(),
+              "held values append and expire in aligned rows");
         item.applyHover(epoch + 5);
         check(item.hover() && item.hover()->text.contains("5.00"), "hover reads latest preceding actual sample");
         item.clear();
@@ -99,9 +100,22 @@ int main(int argc, char **argv)
         check(voltage.series().size() == 1, "voltage has one curve");
         voltage.append(now, {{"voltage", 24.1}});
         check(voltage.series()[0].points.last().y() == 24.1, "voltage value delivered");
+        item.clear(); current.clear(); voltage.clear();
+        const QVariantMap full{{"laserTemperature", 30.0}, {"mcuTemperature", 40.0},
+            {"pa1Current", 1.0}, {"pa2Current", 2.0}, {"pa3Current", 3.0}, {"voltage", 24.0}};
+        for (int i = 0; i < 6; ++i) {
+            const auto at = now + std::chrono::seconds(i);
+            item.append(at, full); current.append(at, full); voltage.append(at, full);
+            for (auto *panel : {&item, &current, &voltage})
+                for (const auto &curve : panel->series())
+                    check(curve.points.size() == std::min(i + 1, 3)
+                          && curve.points.last().x() == epoch + i, "every full update appends six aligned curve points");
+        }
     }
 
     Source source;
+    bool accepted = false;
+    QObject::connect(&source, &Source::delivered, &app, [&](bool value) { accepted = value; });
     QQmlEngine engine;
     engine.rootContext()->setContextProperty("source", &source);
     QQmlComponent component(&engine);
@@ -123,7 +137,7 @@ Window {
     }
     Connections {
         target: source
-        function onMeasurement(at, values) { chart.append(at, values) }
+        function onMeasurement(at, values) { source.delivered(chart.append(at, values)) }
     }
 })QML", QUrl());
     std::unique_ptr<QObject> root(component.create());
@@ -144,6 +158,7 @@ Window {
     for (int i = -120; i <= 0; ++i)
         push(now + std::chrono::seconds(i), i / 12.0);
     wait(80);
+    check(accepted, "QML accepts a full six-value snapshot");
     check(sameX(temperature, current) && sameX(current, voltage), "data time ranges synchronized");
     check(temperature->yAxis().hi == 80 && current->yAxis().hi == 10 && voltage->yAxis().lo == 20,
           "three independent unit ranges");
@@ -167,15 +182,19 @@ Window {
     }
 
     const double fullX = temperature->xAxis().span();
+    const double oldRight = temperature->xAxis().hi;
+    Q_EMIT source.measurement(now + std::chrono::seconds(90), {{"voltage", 24.15}});
+    check(!accepted && temperature->xAxis().hi == oldRight && sameX(temperature, voltage),
+          "QML rejects incomplete snapshot before any panel advances");
     wheel(temperature, Qt::ShiftModifier);
     for (int i = 0; i < 12; ++i) {
         wait(20);
         if (i == 2)
-            Q_EMIT source.measurement(now + std::chrono::milliseconds(200), {{"voltage", 24.15}});
+            push(now + std::chrono::milliseconds(200), 0.1);
         check(sameX(temperature, current) && sameX(current, voltage), "horizontal animation stays synchronized");
     }
     check(temperature->xAxis().span() < fullX && !temperature->xAxis().follow, "shift wheel zooms shared time");
-    check(std::abs(temperature->xAxis().span() - fullX * 0.8) < 1e-5, "partial data does not truncate ongoing zoom");
+    check(std::abs(temperature->xAxis().span() - fullX * 0.8) < 1e-5, "new snapshot does not truncate ongoing zoom");
     const double beforeDrag = voltage->xAxis().lo;
     const QPointF from(420, 100), to(460, 100);
     QMouseEvent press(QEvent::MouseButtonPress, from, voltage->mapToGlobal(from), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
@@ -189,18 +208,18 @@ Window {
     const double voltageY = voltage->yAxis().span();
     wheel(current, Qt::ControlModifier);
     wait(60);
-    Q_EMIT source.measurement(now + std::chrono::seconds(1), {{"voltage", 24.2}});
+    push(now + std::chrono::seconds(1), 0.2);
     wait(180);
     check(current->yAxis().span() < 10 && temperature->yAxis().span() == temperatureY
         && voltage->yAxis().span() == voltageY, "vertical zoom stays independent while new samples arrive");
-    check(sameX(temperature, current) && sameX(current, voltage), "partial reply preserves common X");
+    check(sameX(temperature, current) && sameX(current, voltage), "new snapshot preserves common X");
 
     const QPointF pos(400, 80);
     QMouseEvent reset(QEvent::MouseButtonDblClick, pos, current->mapToGlobal(pos), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
     QCoreApplication::sendEvent(current, &reset);
     check(current->xAxis().follow && temperature->xAxis().follow && voltage->xAxis().follow, "double click restores shared time following");
     root->findChild<QQuickItem *>("chart")->setVisible(false);
-    Q_EMIT source.measurement(now + std::chrono::seconds(20), {{"voltage", 24.5}});
+    push(now + std::chrono::seconds(20), 0.5);
     window->resize(1100, 960);
     wait(40);
     root->findChild<QQuickItem *>("chart")->setVisible(true);

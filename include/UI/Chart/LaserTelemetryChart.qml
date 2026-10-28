@@ -8,9 +8,18 @@ ColumnLayout {
     spacing: 8
 
     function append(at, values) {
+        // 官邸提交同一时刻的完整快照；未知值用 NaN 占位，不能省略字段导致曲线行错位。
+        for (const key of ["laserTemperature", "mcuTemperature", "pa1Current", "pa2Current", "pa3Current", "voltage"]) {
+            const value = values[key]
+            if (typeof value !== "number" || (!Number.isFinite(value) && !Number.isNaN(value))) {
+                console.warn("LaserTelemetryChart requires a complete six-value snapshot")
+                return false
+            }
+        }
         temperatures.append(at, values)
         currents.append(at, values)
         voltage.append(at, values)
+        return true
     }
     function clear() {
         temperatures.clear()

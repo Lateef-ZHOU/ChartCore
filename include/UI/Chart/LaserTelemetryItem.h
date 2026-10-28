@@ -87,22 +87,23 @@ private:
     }
 
 public:
-    // [主] 官邸只交本次收到的数值。缺字段不追加、不沿用旧值；显式 NaN 为曲线断点。
-    // 每条曲线自持采样时刻，允许分包/单寄存器更新；没有凑齐六值的缓存。
+    // [主] 官邸交完整快照，本面板的所有曲线同进同删。NaN 表示尚无测量值。
+    // 不在图表里缓存最新值来补齐输入；缺字段整次拒绝，不能产生不同长度的曲线。
     Q_INVOKABLE void append(const RxTime at, const QVariantMap &values)
     {
         const double seconds = std::chrono::duration<double>(at.time_since_epoch()).count();
         const auto group = channels();
-        for (qsizetype i = 0; i < static_cast<qsizetype>(group.size()); ++i) {
-            const auto it = values.constFind(QLatin1String(group[static_cast<size_t>(i)].key));
-            if (it == values.cend())
-                continue;
+        for (const auto &channel : group) {
+            const auto it = values.constFind(QLatin1String(channel.key));
             bool ok = false;
-            const double value = it->toDouble(&ok);
+            const double value = it == values.cend() ? 0.0 : it->toDouble(&ok);
             if (!ok || std::isinf(value)) {
-                qmlWarning(this) << "Invalid telemetry value:" << it.key();
-                continue;
+                qmlWarning(this) << "Incomplete or invalid telemetry snapshot:" << channel.key;
+                return;
             }
+        }
+        for (qsizetype i = 0; i < static_cast<qsizetype>(group.size()); ++i) {
+            const double value = values.value(QLatin1String(group[static_cast<size_t>(i)].key)).toDouble();
             auto &points = series_[i].points;
             points.append(QPointF(seconds, value));
             if (points.size() > capacity_)
@@ -132,26 +133,23 @@ protected:
 
     [[nodiscard]] std::optional<AxisText> hoverProbe(const double time) const override
     {
-        // 各曲线可以不同步。只读光标之前最近的回报，并显示它的时刻，不伪装成同一次采样。
+        // 每行是官邸的完整快照。显示快照时刻；沿用值属于该时刻的缓存状态，不冒充各寄存器均刚回报。
+        const auto &points = series_.first().points;
+        qsizetype index = -1;
+        for (qsizetype i = 0; i < points.size(); ++i)
+            if (points[i].x() <= time && (index < 0 || points[i].x() >= points[index].x()))
+                index = i;
+        if (index < 0)
+            return std::nullopt;
         const QString unit = quantity_ == Temperature ? QStringLiteral(" °C")
                              : quantity_ == Current ? QStringLiteral(" A") : QStringLiteral(" V");
-        QString text = clockText(time);
-        bool any = false;
+        QString text = QStringLiteral("快照 %1").arg(clockText(points[index].x()));
         for (const auto &curve : series_) {
-            const QPointF *sample = nullptr;
-            for (const auto &point : curve.points)
-                if (point.x() <= time && (!sample || point.x() >= sample->x()))
-                    sample = &point;
+            const double value = curve.points[index].y();
             text += QStringLiteral("\n%1  ").arg(curve.name);
-            if (!sample) {
-                text += QStringLiteral("—");
-                continue;
-            }
-            any = true;
-            text += std::isnan(sample->y()) ? QStringLiteral("—") : QString::number(sample->y(), 'f', 2) + unit;
-            text += QStringLiteral("  [%1]").arg(clockText(sample->x()));
+            text += std::isnan(value) ? QStringLiteral("—") : QString::number(value, 'f', 2) + unit;
         }
-        return any ? std::optional<AxisText>{{time, text}} : std::nullopt;
+        return AxisText{points[index].x(), text};
     }
 
 private:

@@ -67,15 +67,19 @@ LaserTelemetryChart {
 | pa1Current / pa2Current / pa3Current | PA1 / PA2 / PA3 电流 | A |
 | voltage | 系统电压 | V |
 
-`at` 原样转交 C++ 的 RxTime，只有绘图器转为横轴秒数。values 是数值映射，例如 `{voltage: 24.1}`；不要求每次凑齐六项。缺字段不追加点，也不补零或把旧值标成新采样；显式 NaN 表示断点。各曲线保留自己的采样时刻，悬停读数显示光标之前最近的回报及其时刻。容量按点数裁剪，不因墙钟跳变成批清空。QML 不持第二份历史。
+`at` 原样转交 C++ 的 RxTime，只有绘图器转为横轴秒数。2026-10-28 用户进一步裁定：values **必须包含全部六个数值字段**，六条曲线在同一时刻同时追加，容量裁剪也保持行对齐。官邸按协议包更新自己的最新值缓存，未回报项沿用缓存、从未回报项传 NaN；图表既不凑值也不维护第二份最新值。缺字段的输入在分发任何面板之前整次拒绝，NaN 仍占据本行并显示为断点，不伪造零值。悬停显示统一的快照时间和六值；它表示当时缓存状态，不声明六项都在该包重新测量。容量按点数裁剪，不因墙钟跳变成批清空。
+
+官邸在一包解析结束后最多推送一次：一包六项是一次通知，六个独立包则是六次全量通知/36 个曲线点；不新增跨包等待、节流或更新掩码。后续设备轮询优先在一次读取请求中查询六项，减少实际分包机会。普通状态/确认不驱动图表。
 
 三图同步时间轴的跟随、平移、缩放、复位与悬停；纵轴分别调整。裸滚轮缩放当前图两轴，Shift+滚轮只缩放公共时间轴，Ctrl+滚轮只缩放当前纵轴，拖动平移，双击复位当前纵轴并恢复公共时间轴跟随。隐藏期间继续接收历史，恢复后直接绘制。
 
 一个图窗只表示一个观察对象；官邸按回复所属模块路由数据，不按当前单选按钮错误归类。切换对象可明确调用 `clear()` 清空历史/悬停（保留视口），或分别装配种子/放大模块图窗。图表不持设备、不认识寄存器、不做轮询，也不会因空白、旧值或收到数据而发出任何查询。模块路由、响应式查询及激光器 QML 官邸接线仍由设备仓库后续实现。
 
-独立演示：构建后运行 `build/tests/laser_telemetry --preview`（Windows 为 `build/tests/Release/laser_telemetry.exe --preview`，需 Qt bin 在 PATH）。演示源只在测试程序中，每秒生成六项数据，不连接设备；`--capture image.png` 保存实际渲染画面。常规 CTest 使用离屏模式，检查部分字段、容量、单位分组、QML 转交 RxTime、横轴手势联动、独立纵轴、隐藏恢复及 8 秒运行；原 Surface 冒烟继续执行。
+独立演示：构建后运行 `build/tests/laser_telemetry --preview`（Windows 为 `build/tests/Release/laser_telemetry.exe --preview`，需 Qt bin 在 PATH）。演示源只在测试程序中，每秒生成六项数据，不连接设备；`--capture image.png` 保存实际渲染画面。常规 CTest 使用离屏模式，检查缺项整次拒绝、NaN 占位、完整快照的六曲线行对齐、容量、单位分组、QML 转交 RxTime、横轴手势联动、独立纵轴、隐藏恢复及 8 秒运行；原 Surface 冒烟继续执行。
 
-2026-10-28 本轮验证：Windows / MSVC 19.51 / Qt 6.11.2 与 Linux / GCC 16.2.1 / Qt 6.12.0，Release 构建和 public_headers 独立单头编译通过，编译器零警告；CTest 各 2/2，通过 39 项趋势图检查及原角度图、风速/CNR、Surface 装配。两端 CMake qmllint 目标通过，新图无诊断；既有文件仍有 unused-import 提示，Qt 6.12 还提示 Surface 的 state 命名遮蔽。Windows 离屏字体扫描有 FreeType 字体提示；独立 D3D11 / 4× MSAA 渲染截图无该提示，已检查实际布局。未连接激光器，未作硬件测量验证；本轮未更新应用固定依赖或推送仓库。
+2026-10-28 全量更新验证：Windows / MSVC 19.51 / Qt 6.11.2 与 Linux / GCC 16.2.1 / Qt 6.12.0，Release 构建和 public_headers 独立单头编译通过，编译器零警告；CTest 各 2/2，通过 77 项趋势图检查及原角度图、风速/CNR、Surface 装配。两端 CMake qmllint 目标通过，新图无诊断；既有文件仍有 unused-import 提示，Qt 6.12 还提示 Surface 的 state 命名遮蔽。测试故意提交缺项输入时的拒绝诊断符合预期，Windows 离屏字体扫描仍有既有 FreeType 提示。首版曾检查独立 D3D11 / 4× MSAA 实际渲染布局；本次检查数据对齐与交互，没有重做 GPU 画质比较。未连接激光器，未作硬件测量验证；本轮未更新应用固定依赖或推送仓库。
+
+本轮证据：Windows build/build-full-snapshot.log、build/test-full-snapshot.log、build/lint-full-snapshot.log；Linux ~/.cache/chart-telemetry-20261028/ 下 build-full-snapshot-final.log、test-full-snapshot-final.log、lint-full-snapshot-final.log。
 
 ## 来源与许可
 
