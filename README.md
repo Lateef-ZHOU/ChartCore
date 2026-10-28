@@ -81,6 +81,10 @@ LaserTelemetryChart {
 
 本轮证据：Windows build/build-full-snapshot.log、build/test-full-snapshot.log、build/lint-full-snapshot.log；Linux ~/.cache/chart-telemetry-20261028/ 下 build-full-snapshot-final.log、test-full-snapshot-final.log、lint-full-snapshot-final.log。
 
+## 待办：子图共用时间序列（2026-10-28 用户定）
+
+目前温度、电流、电压子图各存点列，重复保存同一次全量快照的时间。后续将历史数据上提到完整图窗，合并为一份时间序列和多通道值，子图只选择通道绘制。RxTime 加六值完整快照的外部契约已确定，改造限制在绘图库，必要时调整函数签名；设备只保留最新值，不承担图表历史。本轮仅记录，暂不改存储。
+
 ## 来源与许可
 
 从 [LiDAR_DataACQ](https://github.com/Lateef-ZHOU/LiDAR_DataACQ) 的模块分离提交 `94ad6f8` 提取；初始分仓保持运行逻辑，独立整理构建、验证与发布入口。
