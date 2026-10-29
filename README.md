@@ -10,6 +10,7 @@ Qt Quick 二维图表与 QRhi 三维高度面，以及配套 QML 图窗。Window
 - 使用 Qt Quick/QML、GuiPrivate/QRhi 和 ShaderTools；必须使用同一套 Qt 开发包/运行库，升级 Qt 后重新构建和验证。
 - Surface 固定宽高各 2 倍 SSAA，完整 XY 域、Z 钳值、无 Roll 旋转及滚轮缩放。QML 持原谱，绘制器仅持显示快照；二维图自行保留历史。
 - 图形后端由应用选择；Windows 可使用 Direct3D11，Linux 可使用 Qt RHI 支持的后端。离屏测试验证装配，不代表硬件 GPU 画质验证。
+- SeriesChart 对所有非空曲线组显示图例，单条曲线也显示名称和颜色；没有曲线时不显示图例。
 
 ## 独立构建和验证
 
@@ -80,6 +81,12 @@ LaserTelemetryChart {
 2026-10-28 全量更新验证：Windows / MSVC 19.51 / Qt 6.11.2 与 Linux / GCC 16.2.1 / Qt 6.12.0，Release 构建和 public_headers 独立单头编译通过，编译器零警告；CTest 各 2/2，通过 77 项趋势图检查及原角度图、风速/CNR、Surface 装配。两端 CMake qmllint 目标通过，新图无诊断；既有文件仍有 unused-import 提示，Qt 6.12 还提示 Surface 的 state 命名遮蔽。测试故意提交缺项输入时的拒绝诊断符合预期，Windows 离屏字体扫描仍有既有 FreeType 提示。首版曾检查独立 D3D11 / 4× MSAA 实际渲染布局；本次检查数据对齐与交互，没有重做 GPU 画质比较。未连接激光器，未作硬件测量验证；本轮未更新应用固定依赖或推送仓库。
 
 本轮证据：Windows build/build-full-snapshot.log、build/test-full-snapshot.log、build/lint-full-snapshot.log；Linux ~/.cache/chart-telemetry-20261028/ 下 build-full-snapshot-final.log、test-full-snapshot-final.log、lint-full-snapshot-final.log。
+
+## 2026-10-29：单曲线图例（用户定）
+
+SeriesChart 不再跳过单条曲线的图例，激光器电压图显示“系统电压”及其线色；所有使用此基类的单曲线图一致处理。没有新增图例开关、接口或状态。
+
+Windows Qt 6.11.2 / MSVC Release 增量构建通过，无编译警告；现有 CTest 2/2 通过（77 项趋势图检查及组件装配）。离屏截图已核对三组图例，电压图例可见；截图用于文字和布局验证，不作为完整 GPU 曲线画质验证。证据：build/build-single-legend.log、build/test-single-legend.log、build/single-legend.png。未连接硬件，未重跑 Linux，未推送。
 
 ## 待办：子图共用时间序列（2026-10-28 用户定）
 

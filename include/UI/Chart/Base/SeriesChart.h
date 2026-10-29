@@ -149,11 +149,11 @@ private:
 
 protected:
     // ── 图例（绘图区右上角）──
-    // 只有一条曲线时不画——轴标题已经说清是什么了。
+    // 单条曲线也显示名称和颜色；只在没有曲线时省略图例。
     void paintMarkLabels(QPainter *painter, const QRectF &r) const override
     {
         const auto &series_ = series();
-        if (series_.size() <= 1)
+        if (series_.isEmpty())
             return;
         const QFontMetricsF metrics(painter->font());
         double legendWidth = 0.0;
