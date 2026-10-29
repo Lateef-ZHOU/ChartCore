@@ -10,6 +10,6 @@ endif()
 if(NOT TARGET Lidar::UICore)
     FetchContent_Declare(lidar_uicore
         GIT_REPOSITORY https://github.com/Lateef-ZHOU/UICore.git
-        GIT_TAG bf646946b884e362ee4bd10225ebb1ff16bdcd63)
+        GIT_TAG 5d4ccc10cadcf597932e3f68e5a5172d5b054a24)
     FetchContent_MakeAvailable(lidar_uicore)
 endif()

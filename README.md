@@ -1,5 +1,7 @@
 # ChartCore
 
+2026-10-29：单曲线也显示图例；独立接入固定 UICore `5d4ccc1`，包含统一上下展开及空列表处理的下拉控件。Windows Release 构建、公开头检查及 CTest 2/2 通过，已取消 UICore 本地覆盖并核对远端完整提交。
+
 Qt Quick 二维图表与 QRhi 三维高度面，以及配套 QML 图窗。Windows / Linux，C++20，CMake ≥ 3.28。
 
 ## 边界与依赖
