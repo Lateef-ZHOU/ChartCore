@@ -18,7 +18,7 @@
 #include "UI/Chart/Base/SeriesChart.h"
 #include "UI/Chart/ChartTypes.h"
 
-// 激光器趋势图的一组量纲：2 路温度 / 3 路电流 / 1 路电压。
+// 激光器趋势图的一组量纲：2 路温度 / 4 路电流 / 2 路电压。
 // 暂不作为可配置任意通道的通用 Plot；不认识协议、设备或查询命令。
 class LaserTelemetryItem : public SeriesChart
 {
@@ -158,9 +158,11 @@ private:
     {
         static constexpr std::array<Channel, 2> temperatures{{
             {"laserTemperature", "激光器", "#1e90ff"}, {"mcuTemperature", "MCU", "#ff6432"}}};
-        static constexpr std::array<Channel, 3> currents{{
-            {"pa1Current", "PA1", "#1e90ff"}, {"pa2Current", "PA2", "#ff6432"}, {"pa3Current", "PA3", "#2ea043"}}};
-        static constexpr std::array<Channel, 1> voltage{{{"voltage", "系统电压", "#9467bd"}}};
+        static constexpr std::array<Channel, 4> currents{{
+            {"pa1Current", "PA1", "#1e90ff"}, {"pa2Current", "PA2", "#ff6432"},
+            {"pa3Current", "PA3", "#2ea043"}, {"sdCurrent", "SD", "#e6ad32"}}};
+        static constexpr std::array<Channel, 2> voltage{{
+            {"voltage", "系统电压", "#9467bd"}, {"pztOffset", "PZT偏移量", "#17becf"}}};
         switch (quantity_) {
         case Temperature: return temperatures;
         case Current: return currents;

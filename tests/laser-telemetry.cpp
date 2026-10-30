@@ -93,23 +93,33 @@ int main(int argc, char **argv)
         item.clear();
         check(item.series()[0].points.isEmpty() && item.series()[1].points.isEmpty() && !item.hover(), "clear drops all history and hover");
         Probe current(configuration(LaserTelemetryItem::Current));
-        check(current.series().size() == 3, "current has three curves");
-        current.append(now, {{"pa1Current", 1.25}, {"pa2Current", 2.5}, {"pa3Current", 3.75}});
-        check(current.series()[2].points.last().y() == 3.75, "current channels remain distinct");
+        check(current.series().size() == 4, "current has four curves including SD");
+        current.append(now, {{"pa1Current", 1.25}, {"pa2Current", 2.5}, {"pa3Current", 3.75}, {"sdCurrent", 0.03125}});
+        check(current.series()[2].points.last().y() == 3.75 && current.series()[3].points.last().y() == 0.03125,
+              "PA and SD current channels remain distinct with fractional amperes preserved");
+        check(current.series()[3].name == "SD", "SD legend names the added current");
         Probe voltage(configuration(LaserTelemetryItem::Voltage));
-        check(voltage.series().size() == 1, "voltage has one curve");
-        voltage.append(now, {{"voltage", 24.1}});
-        check(voltage.series()[0].points.last().y() == 24.1, "voltage value delivered");
+        check(voltage.series().size() == 2, "voltage has system and PZT curves");
+        voltage.append(now, {{"voltage", 24.1}, {"pztOffset", 2.25}});
+        check(voltage.series()[0].points.last().y() == 24.1 && voltage.series()[1].points.last().y() == 2.25,
+              "system voltage and PZT remain separate without scaling");
+        check(voltage.series()[1].name == QStringLiteral("PZT偏移量"), "PZT legend names the added voltage");
+        current.applyHover(epoch);
+        voltage.applyHover(epoch);
+        check(current.hover() && current.hover()->text.contains("SD  0.03 A")
+            && voltage.hover() && voltage.hover()->text.contains(QStringLiteral("PZT偏移量  2.25 V")),
+            "hover shows SD amperes and PZT volts");
         item.clear(); current.clear(); voltage.clear();
         const QVariantMap full{{"laserTemperature", 30.0}, {"mcuTemperature", 40.0},
-            {"pa1Current", 1.0}, {"pa2Current", 2.0}, {"pa3Current", 3.0}, {"voltage", 24.0}};
+            {"pa1Current", 1.0}, {"pa2Current", 2.0}, {"pa3Current", 3.0}, {"voltage", 24.0},
+            {"sdCurrent", 0.03125}, {"pztOffset", 2.125}};
         for (int i = 0; i < 6; ++i) {
             const auto at = now + std::chrono::seconds(i);
             item.append(at, full); current.append(at, full); voltage.append(at, full);
             for (auto *panel : {&item, &current, &voltage})
                 for (const auto &curve : panel->series())
                     check(curve.points.size() == std::min(i + 1, 3)
-                          && curve.points.last().x() == epoch + i, "every full update appends six aligned curve points");
+                          && curve.points.last().x() == epoch + i, "every full update appends eight aligned curve points");
         }
     }
 
@@ -132,8 +142,8 @@ Window {
         anchors.fill: parent; anchors.margins: 16
         configuration: ({ windowSeconds: 120, capacity: 132,
             temperature: {minimum: 0, maximum: 80},
-            current: {minimum: 0, maximum: 10},
-            voltage: {minimum: 20, maximum: 30} })
+            current: {minimum: 0, maximum: 5},
+            voltage: {minimum: 0, maximum: 30} })
     }
     Connections {
         target: source
@@ -151,16 +161,17 @@ Window {
     auto push = [&](RxTime at, double phase) {
         Q_EMIT source.measurement(at, {{"laserTemperature", 36 + 2 * std::sin(phase)},
             {"mcuTemperature", 43 + std::cos(phase * .7)}, {"pa1Current", 3 + .4 * std::sin(phase)},
-            {"pa2Current", 5 + .2 * std::cos(phase)}, {"pa3Current", 7 + .3 * std::sin(phase * 1.3)},
-            {"voltage", 24 + .15 * std::sin(phase * 2)}});
+            {"pa2Current", 2 + .2 * std::cos(phase)}, {"pa3Current", 1 + .3 * std::sin(phase * 1.3)},
+            {"sdCurrent", .03 + .005 * std::sin(phase)},
+            {"voltage", 24 + .15 * std::sin(phase * 2)}, {"pztOffset", 2 + .1 * std::cos(phase)}});
     };
     // 只在独立演示/验证入口造数据；生产图表不拥有演示源或定时器。
     for (int i = -120; i <= 0; ++i)
         push(now + std::chrono::seconds(i), i / 12.0);
     wait(80);
-    check(accepted, "QML accepts a full six-value snapshot");
+    check(accepted, "QML accepts a full eight-value snapshot");
     check(sameX(temperature, current) && sameX(current, voltage), "data time ranges synchronized");
-    check(temperature->yAxis().hi == 80 && current->yAxis().hi == 10 && voltage->yAxis().lo == 20,
+    check(temperature->yAxis().hi == 80 && current->yAxis().hi == 5 && voltage->yAxis().lo == 0,
           "three independent unit ranges");
     check(temperature->width() == current->width() && temperature->height() == current->height(), "vertical layout aligned");
 
@@ -186,6 +197,15 @@ Window {
     Q_EMIT source.measurement(now + std::chrono::seconds(90), {{"voltage", 24.15}});
     check(!accepted && temperature->xAxis().hi == oldRight && sameX(temperature, voltage),
           "QML rejects incomplete snapshot before any panel advances");
+    QVariantMap full{{"laserTemperature", 30.0}, {"mcuTemperature", 40.0}, {"pa1Current", 1.0},
+        {"pa2Current", 2.0}, {"pa3Current", 3.0}, {"sdCurrent", 0.03}, {"voltage", 24.0}, {"pztOffset", 2.0}};
+    for (const auto *key : {"sdCurrent", "pztOffset"}) {
+        auto missing = full;
+        missing.remove(key);
+        Q_EMIT source.measurement(now + std::chrono::seconds(90), missing);
+        check(!accepted && temperature->xAxis().hi == oldRight && sameX(temperature, voltage),
+              "missing SD or PZT rejects all panels before appending");
+    }
     wheel(temperature, Qt::ShiftModifier);
     for (int i = 0; i < 12; ++i) {
         wait(20);
