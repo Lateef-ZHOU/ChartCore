@@ -96,7 +96,7 @@ NonuniformWind2DView {
 
 qmllint 通过，新组件无诊断；保留既有两处 unused-import 提示，离屏字体扫描仍有 FT_New_Face 提示。证据为 `build/nonuniform-{build,test,lint,render}.log`、`build/nonuniform.png` 和 `build/Testing/Temporary/LastTest.log`。ArchHFNL 当前缺 Qt 开发环境，本轮未执行 Linux 构建，也未进行实物验证。
 
-Algorithm 固定本轮本地提交 `224c784117b775177a52d69fe0d61858b39ee867`，尚未推送；本地验证使用 `-DFETCHCONTENT_SOURCE_DIR_LIDAR_ALGORITHM=/path/to/Algorithm`。后续发布时须先推送 Algorithm，再验证 ChartCore 从远端拉取。独立库阶段未更新应用；同日后续已由 LiDAR_DataACQ 固定本地 Git 接入，应用验证见其维护操作。
+Algorithm 固定提交 `224c784117b775177a52d69fe0d61858b39ee867` 已发布。2026-11-01 发布验证取消本地源码覆盖，从 GitHub HTTPS 拉取该提交，Windows Release 与公开头构建、CTest 3/3、QML lint 均通过；保留原两处 unused-import 提示。证据 `build/publish-{configure,build,test,lint}.log`。LiDAR_DataACQ 的固定依赖接入与发布验证见其维护操作。
 
 同日 Windows 集成发现实物设备头先引入 Windows 宏时，非均匀图表配置的 near/far 局部变量会冲突。已改为 rangeLow/rangeHigh，不修改系统宏或依赖包含顺序；nonuniform 专项在 Windows 上先包含 Windows.h 再包含绘图头。Release 与公开头严格编译、CTest 3/3 再次通过，证据 `build/windows-integration-{build,test}.log`。
 
