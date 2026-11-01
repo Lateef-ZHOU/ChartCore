@@ -106,12 +106,26 @@ public:
         if (data.size() != rowCount_)
             return;
         QList<QPointF> &points = series_[0].points;
+        breaks_.clear();
         for (int k = 0; k < rowCount_; ++k)
+        {
             points[k].setX(data[k]);
+            if (!std::isfinite(data[k]) && (k == 0 || std::isfinite(data[k - 1])))
+                breaks_.append(k);
+        }
         dataChanged(); // 只换了值；两轴的界不随这一帧数据动
     }
 
 protected:
+    // 斜距沿 Y 方向均匀。选点直接反算下标，缺测段索引在数据推送时记录一次。
+    void thin(const QList<QPointF> &, const QRectF &, QList<int> &out) const override
+    {
+        ChartThinning::thinUniform(0.5, 1.0, rowCount_, yAxis_.lo, yAxis_.hi,
+                                   binY(yAxis_.span()), 2, out);
+        for (int index : breaks_) out.append(index);
+        std::sort(out.begin(), out.end());
+        out.erase(std::unique(out.begin(), out.end()), out.end());
+    }
     // 界恒定：横轴是型号宪法给的量程、纵轴是全部门格，都不随数据 / 视口 / 像素变。
     [[nodiscard]] std::pair<double, double> boundsX(double, double) const override
     {
@@ -155,6 +169,7 @@ protected:
 private:
     const QList<Series> &series() const override { return series_; }
     QList<Series> series_;
+    QList<int> breaks_; // 每次推送建立缺测段起点索引，抽稀不能跨过缺测段连线。
     int rowCount_ = 1;
     double distPerBin_ = 1;
     int valLo_ = 0; // 值轴量程（型号宪法给的），界恒等于它

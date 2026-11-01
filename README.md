@@ -46,6 +46,58 @@ target_link_libraries(my_app PRIVATE Lidar::ChartCore)
 
 构建工具/部署工具的 QML 导入根目录，由目标的 `QT_QML_MODULE_OUTPUT_DIRECTORY` 向上两级取得；不要假定上游仓库与本仓库相邻。
 
+## 均匀与非均匀剖面（2026-11-01 用户定）
+
+现有 `Wind2DView` / `Wind2DItem` 和 `WindBarbItem` 的数据入口保留。均匀风速/CNR 的纵向抽稀改为直接计算下标；均匀风羽的高度方向也不再逐层生成位置供非均匀抽稀使用。风羽图元、绝对桶对齐、交互和历史容量规则保持。
+
+### 抽稀接口
+
+`UI/Chart/Base/ChartThinning.h` 提供两种入口，均清空并填入 `out` 下标列表，不读取风速、CNR 或风向量：
+
+```cpp
+thinUniform(start, step, count, lo, hi, binWidth, perBin, out);
+thinIrregular(positions, lo, hi, binWidth, perBin, out);
+```
+
+- 均匀版只接收起点、正步进和数量，反算非空显示桶的首末下标；按输出桶跳转，不扫描完整采样数组。浮点边界只校正相邻下标。
+- 非均匀版只遍历位置数组，也接受只读随机访问位置视图，因此时间环无需再复制一份秒数列表。它不接收数据对象或提取载荷的回调。
+- 两者以绝对零点分桶，`perBin=1` 留首值（风羽），`2` 留首末（折线）。视口外保留边界邻接点供裁剪。输入位置、视口与步进的有效性由创建/推送入口保证；时间序列的 NaN 断点支持保持。折线缺测段的索引在推送时建立，抽稀后仍保留断线。
+
+### 非均匀风速/CNR
+
+```qml
+NonuniformWind2DView {
+    id: profile
+    specification: ({ windMin: -30, windMax: 30, cnrMin: -30, cnrMax: 30,
+                      rangeMinimum: 0, rangeMaximum: 27000 })
+}
+// 每次完整替换某一剖面，返回是否接收成功：
+// profile.updateWS(ranges, speeds)
+// profile.updateCNR(ranges, cnrValues)
+```
+
+底层 `NonuniformWind2DItem.setData(QVector<double> ranges, QVector<double> values)` 接收分开的斜距数组与值数组，仅保留最新剖面，不存时间环或另一份 QPointF 数据。斜距以米为单位，风速为 m/s，CNR 为 dB；QML 原样转交，不展开或加工大数组。`QVector` 按值接收，利用隐式共享隔离生产者后续修改。
+
+**只在推送入口检查等长**，同时检查位置有限且严格递增；失败返回 false、保留上一完整剖面，不截短或拼接。后续绘制、悬停和抽稀信任两数组对应。两个空数组表示清空；单点允许，显示范围保持非零；值为 NaN/Inf 表示缺测断线。创建配置的斜距范围是无数据时的初始范围，有数据后按实际斜距确定边界。悬停按最近实际斜距吸附，两图的纵轴缩放、平移、复位及悬停联动。
+
+### 非均匀风羽
+
+`NonuniformWindBarbItem` 与旧 `WindBarbItem` 一样可直接在 QML 创建，沿用创建期 `configuration`：`heightBins`（最低层数）、`windowSeconds`、`columnSeconds`、`maxHeight`。`appendColumn(NonuniformVerticalWindProfilePtr)` 返回是否接收成功。
+
+帧类型位于 Algorithm 的 `VerticalWindProfile.h`：一次时刻 `system_clock::time_point`、连续高度数组 `vector<double> heights`（米）、连续 ENU 风向量数组 `vector<LinAlg::Vec3> winds`（米/秒）。生产者填好后发布 `shared_ptr<const ...>`，不得再经可写别名修改；Qt/QML 类型登记仅由 ChartCore 提供。
+
+推送时一次检查非空、两数组等长、最低层数及高度有限且严格递增，失败不改历史。接收后以整帧只读份额进入定长环：容量内填充，满后覆盖最旧整帧，高度与风值一同保活和释放，不拆成多份历史、不复制整帧数据。容量沿用 `ceil(1.1 × windowSeconds / columnSeconds)`，隐藏仍收数据。均匀/非均匀图共用风羽绘制实现，只在高度选点时分别用均匀公式或位置数组。
+
+本次只提供数据类型和绘图库能力，不改变现有设备的反演、径向风换算或文件格式；CDL5 的物理参数和三通道风速/风廓线接入仍待后续落实。
+
+独立验证入口是 `tests/nonuniform.cpp`。Windows 运行 `build/tests/Release/nonuniform.exe --snapshot` 可生成 `nonuniform.png`；需要 Qt bin 在 PATH，实际图元检查使用 Windows 平台和 Direct3D11，离屏 Null/软件后端不能用于确认 GPU 图元。测试数据均为合成数据，不连接设备。
+
+2026-11-01 验证：Windows / MSVC / Qt 6.11.2，Release /W4 构建、严格公开头编译和 CTest 3/3 通过；新增专项 2437 项检查，包括 600 组均匀/非均匀选点对照、20 亿隐式均匀点、入口拒收与旧帧保留、共享份额和环形覆盖、QML 数据转交、联动、隐藏恢复与 8 秒运行。Direct3D11 合成数据截图已检查曲线、风羽、物理坐标和图例。
+
+qmllint 通过，新组件无诊断；保留既有两处 unused-import 提示，离屏字体扫描仍有 FT_New_Face 提示。证据为 `build/nonuniform-{build,test,lint,render}.log`、`build/nonuniform.png` 和 `build/Testing/Temporary/LastTest.log`。ArchHFNL 当前缺 Qt 开发环境，本轮未执行 Linux 构建，也未进行实物验证。
+
+Algorithm 固定本轮本地提交 `224c784117b775177a52d69fe0d61858b39ee867`，尚未推送；本地验证使用 `-DFETCHCONTENT_SOURCE_DIR_LIDAR_ALGORITHM=/path/to/Algorithm`。后续发布时须先推送 Algorithm，再验证 ChartCore 从远端拉取；本轮未更新主程序固定依赖或运行入口。
+
 ## 激光器三组趋势图（2026-10-28 用户定）
 
 `LaserTelemetryChart.qml` 暂作为专用图种放在 ChartCore，纵向排列三幅图：温度（激光器、MCU）、电流（PA1、PA2、PA3、SD）、电压（系统电压、PZT 偏移量）。复用 SeriesChart 的折线、图例、抽稀和手势；AngleChart 与风速/CNR 图保持各自接口，暂不合并成通用多图框架。后续是否统一 Plot 接口仍待定。

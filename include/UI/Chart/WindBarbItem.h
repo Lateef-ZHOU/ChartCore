@@ -10,6 +10,8 @@
 #include <limits>
 #include <utility>
 #include <vector>
+#include <span>
+#include <ranges>
 #include <QColor>
 #include <QDateTime>
 #include <QObject>
@@ -19,7 +21,7 @@
 #include <QVector>
 
 #include "Algorithm/Wind/VerticalWindProfile.h"
-#include "UI/Chart/Base/ChartThinning.h" // thinIrregular
+#include "UI/Chart/Base/ChartThinning.h"
 #include "UI/Chart/Base/ChartTicks.h"    // clock / decimal
 #include "UI/Chart/Base/QuickChartItem.h"
 
@@ -31,8 +33,8 @@
 //
 // ── 数据 ─────────────────────────────────────────────────────────────────────────
 // 历史是只读垂直风廓线帧的定长环，真实反演与虚拟真值走同一个入口。
-// 每帧自带 RxTime、起始高度和层间距和 ENU 向量数组；本图保留同一份额，不拆列、不降为 float。
-// 高度由起始高度加下标乘层间距计算，风羽直接使用水平分量；时间仅在投影/画轴时转成秒。
+// 每帧自带 RxTime 和 ENU 向量数组；均匀版带起始高度/层间距，非均匀版带等长高度数组。
+// 两种输入共用几何与交互，各自持有整帧历史；时间仅在投影/画轴时转成秒。
 // QML 原样转交整帧，隐藏也收齐历史；GUI 写，场景图同步期间渲染线程只读。
 //
 // ── 抽稀：两根轴同一套 ───────────────────────────────────────────────────────────────
@@ -85,24 +87,19 @@
 // ============================================================
 
 // ============================================================
-// WindBarbItem —— 图本体（自绘 item）
+// WindBarbChart —— 两种高度布局共用的图元和交互
 // ============================================================
-class WindBarbItem : public QuickChartItem
+class WindBarbChart : public QuickChartItem
 {
     Q_OBJECT
-    QML_ELEMENT
+    QML_ANONYMOUS
     Q_PROPERTY(QVariantMap configuration READ configuration WRITE setConfiguration REQUIRED)
 public:
-    explicit WindBarbItem(QQuickItem *parent = nullptr)
-        : WindBarbItem(QVariantMap{{"heightBins", 1}, {"windowSeconds", 1.0},
-            {"columnSeconds", 1.0}, {"maxHeight", 1.0}}, parent) {}
-
-    explicit WindBarbItem(const QVariantMap &configuration, QQuickItem *parent = nullptr)
+    explicit WindBarbChart(QQuickItem *parent = nullptr)
         : QuickChartItem(kBarbCellMinPx, kBandExp, parent)
     {
         xAxis_.title = QStringLiteral("时间");
         yAxis_.title = QStringLiteral("高度 (m)");
-        configure(configuration);
     }
     QVariantMap configuration() const
     {
@@ -118,19 +115,25 @@ public:
         configure(value);
     }
 
-    // [主] 收整帧；数组仍由该只读帧持有，环满仅释放最旧份额。
-    Q_INVOKABLE void appendColumn(VerticalWindProfilePtr profile)
+protected:
+    // 临时只读视图，不保存第二份数据。均匀列的 heights 为空，由 start/step 定位。
+    struct Column
     {
-        if (!profile || !profile->hasValidGrid()
-            || profile->winds.size() < static_cast<std::size_t>(heightBins_)) return;
-        const double timeKey = std::chrono::duration<double>(profile->at.time_since_epoch()).count();
-        history_.append(std::move(profile));
-        noteLastX(timeKey);
+        RxTime at;
+        std::span<const LinAlg::Vec3> winds;
+        std::span<const double> heights;
+        double start = 0, step = 1;
+        double heightAt(int i) const { return heights.empty() ? start + double(i) * step : heights[i]; }
+    };
+    virtual int columnCount() const = 0;
+    virtual Column columnAt(int i) const = 0;
+    virtual void resetHistory(std::size_t capacity) = 0;
+    int minimumLayers() const { return heightBins_; }
+    void columnAccepted(RxTime at)
+    {
+        noteLastX(std::chrono::duration<double>(at.time_since_epoch()).count());
         dataChanged();
     }
-
-protected:
-    // 全部风羽 = 一个逐顶点着色的几何节点（一次 draw call）
     int drawMarks(QSGNode *clip, int firstIndex, const QRectF &plot) override;
 
 private:
@@ -144,7 +147,7 @@ private:
     {
         if (!(hi > lo))
             return {lo, hi};
-        if (history_.size() == 0)
+        if (columnCount() == 0)
             return {0.0, maxHeightM_};
         return bucketedY(lowest(), highest(), hi - lo);
     }
@@ -154,26 +157,28 @@ private:
     // ⇒ 数据不更新时恒定 ⇒ 缩放钳位一步到位。
     [[nodiscard]] double fullSpanY() const override
     {
-        return history_.size() == 0 ? maxHeightM_ : bucketedFullSpanY(lowest(), highest());
+        return columnCount() == 0 ? maxHeightM_ : bucketedFullSpanY(lowest(), highest());
     }
 
     [[nodiscard]] double lowest() const
     {
         double result = std::numeric_limits<double>::infinity();
-        for (std::size_t i = 0; i < history_.size(); ++i)
-            result = std::min(result, history_.at(i)->startHeightM);
+        for (int i = 0; i < columnCount(); ++i)
+            result = std::min(result, columnAt(i).heightAt(0));
         return result;
     }
     [[nodiscard]] double highest() const
     {
         double result = -std::numeric_limits<double>::infinity();
-        for (std::size_t i = 0; i < history_.size(); ++i)
-            result = std::max(result, history_.at(i)->heightAt(history_.at(i)->winds.size() - 1));
+        for (int i = 0; i < columnCount(); ++i) {
+            const auto column = columnAt(i);
+            result = std::max(result, column.heightAt(static_cast<int>(column.winds.size()) - 1));
+        }
         return result;
     }
     [[nodiscard]] double timeAt(const int column) const
     {
-        return std::chrono::duration<double>(history_.at(column)->at.time_since_epoch()).count();
+        return std::chrono::duration<double>(columnAt(column).at.time_since_epoch()).count();
     }
 
     // 刻度。两根轴的视口单位就是要显示的量：横轴 epoch 秒走钟表阶梯，纵轴米走十进制阶梯。
@@ -230,6 +235,7 @@ private:
     // 桶的像素边长下限 = 独占正方形下限 / 占比。它与 kBandExp 一起在 ctor 里交给基类当格子政策。
     static constexpr double kBarbCellMinPx = kBarbFootprintMinPx / kBarbFill; // ≈ 32.6
 
+protected:
     void configure(const QVariantMap &value)
     {
         const int bins = value.value("heightBins").toInt();
@@ -244,15 +250,15 @@ private:
         heightBins_ = bins;
         columnSeconds_ = column;
         maxHeightM_ = height;
-        history_ = VerticalWindProfileHistory(static_cast<std::size_t>(capacity));
+        resetHistory(static_cast<std::size_t>(capacity));
         initializeTimeWindow(window);
         yAxis_.lo = 0;
         yAxis_.hi = height;
     }
+private:
     int heightBins_ = 1;
     double columnSeconds_ = 1;
     double maxHeightM_ = 1;
-    VerticalWindProfileHistory history_{1};
 
     // 本帧选中的列 / 当前这一列选中的门（都是每桶首值）。只在 drawMarks 里用，clear() 复用容量、
     // 帧内不分配。渲染线程碰，但 updatePaintNode 期间 GUI 线程是阻塞的，与 history_ 同一口径。
@@ -261,17 +267,17 @@ private:
 };
 
 // ============================================================
-// WindBarbItem —— inline 实现
+// WindBarbChart —— inline 实现
 // ============================================================
 
-inline QColor WindBarbItem::colorForSpeed(const double speed)
+inline QColor WindBarbChart::colorForSpeed(const double speed)
 {
     // 蓝→红随风速升高：hue 240(蓝)→0(红) over [0, kMaxSpeed]，过青/绿/黄/橙；≥kMaxSpeed 恒红。
     const double t = std::clamp(speed / kMaxSpeed, 0.0, 1.0);
     return QColor::fromHsvF(static_cast<float>((240.0 / 360.0) * (1.0 - t)), 0.85f, 0.95f);
 }
 
-inline int WindBarbItem::barbUnits(const double speed)
+inline int WindBarbChart::barbUnits(const double speed)
 {
     if (speed < kHalfFeatherSpeed * 0.5)
         return 2; // 杆 + 静风标记
@@ -279,7 +285,7 @@ inline int WindBarbItem::barbUnits(const double speed)
     return 1 + halfUnits / 2 + halfUnits % 2; // 杆 + 满羽 + 半羽
 }
 
-inline int WindBarbItem::writeSegmentColored(QSGGeometry::ColoredPoint2D *v, const double x0, const double y0,
+inline int WindBarbChart::writeSegmentColored(QSGGeometry::ColoredPoint2D *v, const double x0, const double y0,
                                              const double x1, const double y1, const double half,
                                              const QColor &color)
 {
@@ -317,7 +323,7 @@ inline int WindBarbItem::writeSegmentColored(QSGGeometry::ColoredPoint2D *v, con
 }
 
 // 一根风羽 = 杆 + 若干羽毛（或静风标记），每样都是一段粗线。
-inline int WindBarbItem::writeBarb(QSGGeometry::ColoredPoint2D *v, const double x, const double y,
+inline int WindBarbChart::writeBarb(QSGGeometry::ColoredPoint2D *v, const double x, const double y,
                                    const double speed, const LinAlg::Vec3 &wind, const double sizePx, const QColor &color)
 {
     const double half = kBarbLineWidth / 2.0;
@@ -373,7 +379,7 @@ inline int WindBarbItem::writeBarb(QSGGeometry::ColoredPoint2D *v, const double 
     return n;
 }
 
-inline int WindBarbItem::drawMarks(QSGNode *clip, const int firstIndex, const QRectF &plot)
+inline int WindBarbChart::drawMarks(QSGNode *clip, const int firstIndex, const QRectF &plot)
 {
     // 取（必要时新建）逐顶点着色的几何节点
     while (clip->childCount() <= firstIndex)
@@ -401,7 +407,7 @@ inline int WindBarbItem::drawMarks(QSGNode *clip, const int firstIndex, const QR
         return 1;
     };
 
-    if (history_.size() == 0 || plot.isEmpty())
+    if (columnCount() == 0 || plot.isEmpty())
         return nothingToDraw();
 
     const double span = xAxis_.span();
@@ -418,8 +424,9 @@ inline int WindBarbItem::drawMarks(QSGNode *clip, const int firstIndex, const QR
     // 选列：每桶留首列。**按桶边界取、不按视口边界取**——选中哪几列只由数据与桶长决定，与视口
     // 位置无关（按视口边界取的话，拖动时最边上那个半截桶的"首列"会随视口一直换人）。
     // 视口外的列被钳进左右两个哑桶，下面那道交叠判据会把它们筛掉。
-    ChartThinning::thinIrregular(
-        static_cast<int>(history_.size()), [&](const int c) { return timeAt(c); }, xAxis_.lo, xAxis_.hi, binSec, 1, binPick_);
+    const auto times = std::views::iota(0, columnCount())
+        | std::views::transform([&](int i) { return timeAt(i); });
+    ChartThinning::thinIrregular(times, xAxis_.lo, xAxis_.hi, binSec, 1, binPick_);
 
     // 一根风羽的尺寸：格子取两轴中较小的那条边，其中 kBarbFill 归风羽（见文件头「独占空间」）。
     // max(1.0) 只为绘图区小到放不下一整格的退化情形兜底：宁可画小也不画出格。
@@ -445,14 +452,17 @@ inline int WindBarbItem::drawMarks(QSGNode *clip, const int firstIndex, const QR
 
     // ── 把这一帧要画的风羽逐根走一遍 ─────────────────────────────────────────────────
     // 数顶点与写顶点**共用这一个遍历**：两趟必须选中同一批风羽，筛选各写一遍就是缓冲区溢出的引信。
-    // 两轴按公共桶选首值；高度直接由各帧的均匀网格定位。
+    // 两轴按公共桶选首值；高度由均匀参数反算或非均匀位置序列提供。
     const auto eachBarb = [&](auto &&visit) {
         for (const int c : binPick_)
         {
-            const auto &profile = *history_.at(c);
+            const auto profile = columnAt(c);
             const double x = xAxis_.toPixel((timeBinOf(timeAt(c)) + 0.5) * binSec, plot.left(), plot.right());
-            ChartThinning::thinIrregular(static_cast<int>(profile.winds.size()),
-                [&](int k) { return profile.heightAt(k); }, yAxis_.lo, yAxis_.hi, binM, 1, gatePick_);
+            if (profile.heights.empty())
+                ChartThinning::thinUniform(profile.start, profile.step, static_cast<int>(profile.winds.size()),
+                    yAxis_.lo, yAxis_.hi, binM, 1, gatePick_);
+            else
+                ChartThinning::thinIrregular(profile.heights, yAxis_.lo, yAxis_.hi, binM, 1, gatePick_);
             for (const int k : gatePick_)
             {
                 const auto &wind = profile.winds[k];
@@ -486,3 +496,71 @@ inline int WindBarbItem::drawMarks(QSGNode *clip, const int firstIndex, const QR
     node->markDirty(QSGNode::DirtyGeometry);
     return 1;
 }
+
+
+
+// 均匀版保留既有数据入口和创建配置。
+class WindBarbItem : public WindBarbChart
+{
+    Q_OBJECT
+    QML_ELEMENT
+public:
+    explicit WindBarbItem(QQuickItem *parent = nullptr)
+        : WindBarbItem(QVariantMap{{"heightBins", 1}, {"windowSeconds", 1.0},
+            {"columnSeconds", 1.0}, {"maxHeight", 1.0}}, parent) {}
+    explicit WindBarbItem(const QVariantMap &config, QQuickItem *parent = nullptr) : WindBarbChart(parent)
+    { configure(config); }
+    Q_INVOKABLE void appendColumn(VerticalWindProfilePtr profile)
+    {
+        if (!profile || !profile->hasValidGrid()
+            || profile->winds.size() < static_cast<std::size_t>(minimumLayers())) return;
+        const auto at = profile->at;
+        history_.append(std::move(profile));
+        columnAccepted(at);
+    }
+protected:
+    int columnCount() const override { return static_cast<int>(history_.size()); }
+    Column columnAt(int i) const override
+    {
+        const auto &frame = *history_.at(i);
+        return {frame.at, frame.winds, {}, frame.startHeightM, frame.heightStepM};
+    }
+    void resetHistory(std::size_t capacity) override { history_ = VerticalWindProfileHistory(capacity); }
+private:
+    VerticalWindProfileHistory history_{1};
+};
+
+// 非均匀版只在推送时校验整帧；后续绘制信任两数组对应，不逐点检查长度。
+class NonuniformWindBarbItem : public WindBarbChart
+{
+    Q_OBJECT
+    QML_ELEMENT
+public:
+    explicit NonuniformWindBarbItem(QQuickItem *parent = nullptr)
+        : NonuniformWindBarbItem(QVariantMap{{"heightBins", 1}, {"windowSeconds", 1.0},
+            {"columnSeconds", 1.0}, {"maxHeight", 1.0}}, parent) {}
+    explicit NonuniformWindBarbItem(const QVariantMap &config, QQuickItem *parent = nullptr) : WindBarbChart(parent)
+    { configure(config); }
+    Q_INVOKABLE bool appendColumn(NonuniformVerticalWindProfilePtr profile)
+    {
+        if (!profile || profile->heights.size() != profile->winds.size()
+            || profile->winds.size() < static_cast<std::size_t>(minimumLayers())) return false;
+        for (std::size_t i = 0; i < profile->heights.size(); ++i)
+            if (!std::isfinite(profile->heights[i])
+                || (i > 0 && !(profile->heights[i] > profile->heights[i - 1]))) return false;
+        const auto at = profile->at;
+        history_.append(std::move(profile));
+        columnAccepted(at);
+        return true;
+    }
+protected:
+    int columnCount() const override { return static_cast<int>(history_.size()); }
+    Column columnAt(int i) const override
+    {
+        const auto &frame = *history_.at(i);
+        return {frame.at, frame.winds, frame.heights};
+    }
+    void resetHistory(std::size_t capacity) override { history_ = NonuniformVerticalWindProfileHistory(capacity); }
+private:
+    NonuniformVerticalWindProfileHistory history_{1};
+};

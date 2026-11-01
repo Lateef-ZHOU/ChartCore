@@ -54,3 +54,10 @@ struct VerticalWindProfileQml
     QML_FOREIGN(VerticalWindProfilePtr)
     QML_ANONYMOUS
 };
+
+struct NonuniformVerticalWindProfileQml
+{
+    Q_GADGET
+    QML_FOREIGN(NonuniformVerticalWindProfilePtr)
+    QML_ANONYMOUS
+};

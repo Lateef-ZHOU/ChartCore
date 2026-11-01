@@ -21,8 +21,8 @@
 //   QuickChartItem —— 画布与导航：轴 / 网格 / 边框 / 悬停线 / 缩放 / 拖动 / 文字层。
 //                      **不知道自己画的是什么**，只向子类开口：drawMarks（吐顶点）、
 //                      paintMarkLabels（吐字）、hoverProbe、bounds* / fullSpan* / ticks*。
-//   SeriesChart    —— 折线族：持点列、画折线、画图例。AngleChartItem / Wind2DPanel 继承它。
-//   WindBarbItem   —— 自绘族：持环形矩阵、画风羽。与本类**平级**，互不认识。
+//   SeriesChart    —— 折线族：读取子类点列或分数组剖面、画折线和图例。
+//   WindBarbChart  —— 自绘族：读取整帧环形历史、画风羽。与本类**平级**，互不认识。
 // 折线是本族的图元，不是底座的内置设施——底座不认识「折线」，风羽图也用不上它。
 //
 // 三条流的方向（各不相同，且都是有意的）：
@@ -58,7 +58,7 @@ protected:
     // 这一点画不画得出来：**只判数据有效性，不判在不在视口内**。出了视口的点照画，由 QSGClipNode
     // 裁掉露在外面的部分——按视口筛的话，线段只要有一端出界就整段不画，曲线在出界和回界处各断一次。
     // NaN 要判：那是"这一拍没有值"，与"值在视野外"是两回事，前者必须断开。
-    [[nodiscard]] static bool usable(const QPointF &p) { return !std::isnan(p.x()) && !std::isnan(p.y()); }
+    [[nodiscard]] static bool usable(const QPointF &p) { return std::isfinite(p.x()) && std::isfinite(p.y()); }
 
     // ── 折线：每段两个三角形 ──
     // 粗线必须自己摊成三角形（RHI 下 glLineWidth 恒按 1），**不做接头**——采样密、线又细，
@@ -68,38 +68,41 @@ protected:
     int drawMarks(QSGNode *clip, const int firstIndex, const QRectF &r) override
     {
         const auto &series_ = series();
-        const auto half = static_cast<float>(kLineWidth / 2.0);
         for (int s = 0; s < series_.size(); ++s)
         {
             const QList<QPointF> &pts = series_[s].points;
-            thin(pts, r);                     // 结果落在 pick_：**活下来的下标**
-            const auto at = [&](const int j) -> const QPointF & { return pts[pick_[j]]; };
-            int segments = 0;
-            for (int j = 1; j < pick_.size(); ++j)
-                if (usable(at(j - 1)) && usable(at(j)))
-                    ++segments;
-            auto *node = lineNode(clip, firstIndex + s, legible(series_[s].color), segments * 6, QSGGeometry::DrawTriangles);
-            if (segments > 0)
-            {
-                QSGGeometry::Point2D *v = node->geometry()->vertexDataAsPoint2D();
-                int n = 0;
-                for (int j = 1; j < pick_.size(); ++j)
-                {
-                    if (!usable(at(j - 1)) || !usable(at(j)))
-                        continue;
-                    const QPointF a(xAxis_.toPixel(at(j - 1).x(), r.left(), r.right()),
-                                    yAxis_.toPixel(at(j - 1).y(), r.bottom(), r.top()));
-                    const QPointF b(xAxis_.toPixel(at(j).x(), r.left(), r.right()),
-                                    yAxis_.toPixel(at(j).y(), r.bottom(), r.top()));
-                    n += writeSegment(v + n, a, b, half);
-                }
-            }
-            node->markDirty(QSGNode::DirtyGeometry);
+            thin(pts, r, pick_);                     // 结果落在 pick_：**活下来的下标**
+            drawPolyline(clip, firstIndex + s, r, series_[s].color, pick_,
+                         [&](int i) { return pts[i]; });
         }
         return static_cast<int>(series_.size());
     }
 
-private:
+    // 点列和分数组剖面共用几何生成；PointAt 只在选中的下标处读取值，不生成 QPointF 缓存。
+    template <class Indices, class PointAt>
+    void drawPolyline(QSGNode *clip, int index, const QRectF &r, const QColor &color,
+                      const Indices &indices, PointAt pointAt)
+    {
+        int segments = 0;
+        for (int j = 1; j < indices.size(); ++j)
+            if (usable(pointAt(indices[j - 1])) && usable(pointAt(indices[j]))) ++segments;
+        auto *node = lineNode(clip, index, legible(color), segments * 6, QSGGeometry::DrawTriangles);
+        if (segments > 0) {
+            auto *vertices = node->geometry()->vertexDataAsPoint2D();
+            int n = 0;
+            for (int j = 1; j < indices.size(); ++j) {
+                const QPointF a = pointAt(indices[j - 1]), b = pointAt(indices[j]);
+                if (!usable(a) || !usable(b)) continue;
+                n += writeSegment(vertices + n,
+                    {xAxis_.toPixel(a.x(), r.left(), r.right()), yAxis_.toPixel(a.y(), r.bottom(), r.top())},
+                    {xAxis_.toPixel(b.x(), r.left(), r.right()), yAxis_.toPixel(b.y(), r.bottom(), r.top())},
+                    static_cast<float>(kLineWidth / 2.0));
+            }
+        }
+        node->markDirty(QSGNode::DirtyGeometry);
+    }
+
+protected:
     // ── 抽稀 ────────────────────────────────────────────────────────────────────
     // **每帧的一次投影，不是对数据的变换**：原始点列一个不动，放大回去全都在。
     // 要它的理由是点太密：100 Hz 的回显 × 两分钟 × 四条曲线 ≈ 五万点，每帧重建全部顶点，
@@ -117,9 +120,8 @@ private:
     // 代价明码：**桶内的单次野值会被这条弦吞掉**，全景下看不见。
     //
     // **前提：x 沿点列单调**（桶的到访顺序 = 数组顺序），否则合并同桶会把不相邻的点揉到一起。
-    // 所以先验一遍，不单调就原样全画——剖面图正是不单调的那种（x 是风速，点列按门排）。
-    // 判据写在**数据**上，不写在"我知道今天谁会用"上。
-    void thin(const QList<QPointF> &pts, const QRectF &r)
+    // 默认时间序列先验一遍，不单调就原样全画。剖面图重写本函数，沿均匀斜距 Y 直接选点。
+    virtual void thin(const QList<QPointF> &pts, const QRectF &r, QList<int> &out) const
     {
         constexpr int kPerBin = 2; // 首 / 末（图元要连成线）
         const double plotPx = r.width();
@@ -131,20 +133,22 @@ private:
 
         if (tooSparse || !monotone) // 全量：填 0…n-1，调用方只走一条路
         {
-            pick_.resize(pts.size());
+            out.resize(pts.size());
             for (int i = 0; i < pts.size(); ++i)
-                pick_[i] = i;
+                out[i] = i;
             return;
         }
         const double binWidth = binX(span);
         // 位置交 NaN = 断点：折线在此断开。NaN 可能长在 **y** 上（角度图的世界角反解够不着），
         // 而分桶只看 x，所以这里把"y 无效"翻译成"位置无效"交给它。
-        ChartThinning::thinIrregular(
-            static_cast<int>(pts.size()),
-            [&](const int i) { return usable(pts[i]) ? pts[i].x() : std::numeric_limits<double>::quiet_NaN(); },
-            xAxis_.lo, xAxis_.hi, binWidth, kPerBin, pick_);
+        const auto positions = std::views::iota(0, static_cast<int>(pts.size()))
+            | std::views::transform([&](int i) {
+                return usable(pts[i]) ? pts[i].x() : std::numeric_limits<double>::quiet_NaN();
+            });
+        ChartThinning::thinIrregular(positions, xAxis_.lo, xAxis_.hi, binWidth, kPerBin, out);
     }
 
+private:
     QList<int> pick_; // [主] 抽稀的落点：**下标**，不是点。每条曲线画完即复用
 
 protected:
