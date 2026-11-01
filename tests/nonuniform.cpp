@@ -16,6 +16,10 @@
 #include <QTimer>
 #include <QWheelEvent>
 #include <QtQml/QQmlExtensionPlugin>
+#ifdef _WIN32
+// 实物设备可先引入 Windows 头；绘图公开头也必须能在 near/far 宏存在时使用。
+#include <Windows.h>
+#endif
 #include "UI/Chart/NonuniformWind2DItem.h"
 #include "UI/Chart/Wind2DItem.h"
 #include "UI/Chart/WindBarbItem.h"

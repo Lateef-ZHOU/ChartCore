@@ -40,18 +40,18 @@ public:
             return;
         }
         const double low = config.value("minimum").toDouble(), high = config.value("maximum").toDouble();
-        const double near = config.value("rangeMinimum").toDouble(), far = config.value("rangeMaximum").toDouble();
+        const double rangeLow = config.value("rangeMinimum").toDouble(), rangeHigh = config.value("rangeMaximum").toDouble();
         if (!std::isfinite(low) || !std::isfinite(high) || !(high > low)
-            || !std::isfinite(near) || !std::isfinite(far) || !(far > near))
+            || !std::isfinite(rangeLow) || !std::isfinite(rangeHigh) || !(rangeHigh > rangeLow))
             qFatal("Invalid nonuniform profile configuration.");
         valueMin_ = low; valueMax_ = high;
-        rangeMin_ = near; rangeMax_ = far;
+        rangeMin_ = rangeLow; rangeMax_ = rangeHigh;
         series_[0].name = config.value("name").toString();
         series_[0].color = config.value("color").value<QColor>();
         xAxis_.title = config.value("title").toString();
         initializeInteraction(true, config.value("rightAxis").toBool());
         xAxis_.lo = low; xAxis_.hi = high;
-        yAxis_.lo = near; yAxis_.hi = far;
+        yAxis_.lo = rangeLow; yAxis_.hi = rangeHigh;
     }
 
     // 入口一次检查：拒绝时完整保留上一帧。QVector 按值接纳，生产者后续修改会隐式分离。
