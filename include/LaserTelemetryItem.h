@@ -14,9 +14,9 @@
 #include <QVariantMap>
 #include <QtQml/qqmlinfo.h>
 #include <QtQml/qqmlregistration.h>
-#include "UI/Chart/Base/ChartTicks.h"
-#include "UI/Chart/Base/SeriesChart.h"
-#include "UI/Chart/ChartTypes.h"
+#include "ChartTicks.h"
+#include "SeriesChart.h"
+#include "ChartTypes.h"
 
 // 激光器趋势图的一组量纲：2 路温度 / 4 路电流 / 2 路电压。
 // 暂不作为可配置任意通道的通用 Plot；不认识协议、设备或查询命令。

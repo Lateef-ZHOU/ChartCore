@@ -15,9 +15,9 @@
 #include <QString>
 #include <QVector>
 
-#include "Algorithm/Wind/RangeGate.h" // 门下标 → 斜距（与风廓线共用的唯一一处换算）
-#include "UI/Chart/Base/ChartTicks.h"
-#include "UI/Chart/Base/SeriesChart.h"
+#include "RangeGate.h" // 门下标 → 斜距（与风廓线共用的唯一一处换算）
+#include "ChartTicks.h"
+#include "SeriesChart.h"
 
 // ============================================================
 // Wind2DItem.h —— 风速 | CNR 双剖面图

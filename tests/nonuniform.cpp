@@ -20,9 +20,9 @@
 // 实物设备可先引入 Windows 头；绘图公开头也必须能在 near/far 宏存在时使用。
 #include <Windows.h>
 #endif
-#include "UI/Chart/NonuniformWind2DItem.h"
-#include "UI/Chart/Wind2DItem.h"
-#include "UI/Chart/WindBarbItem.h"
+#include "NonuniformWind2DItem.h"
+#include "Wind2DItem.h"
+#include "WindBarbItem.h"
 
 Q_IMPORT_QML_PLUGIN(LidarUIPlugin)
 Q_IMPORT_QML_PLUGIN(LidarChartsPlugin)

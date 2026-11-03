@@ -14,10 +14,10 @@
 #include <QQuickItem>
 #include <QString>
 
-#include "UI/Chart/Base/ChartTicks.h"
-#include "UI/Chart/Base/SeriesChart.h"
-#include "UI/Chart/ChartTypes.h"
-#include "Algorithm/Geometry/GimbalModel.h"
+#include "ChartTicks.h"
+#include "SeriesChart.h"
+#include "ChartTypes.h"
+#include "GimbalModel.h"
 
 // ============================================================
 // AngleChartItem.h —— 云台角度图（横轴时间 / 纵轴角度）

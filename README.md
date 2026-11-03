@@ -52,7 +52,7 @@ target_link_libraries(my_app PRIVATE Lidar::ChartCore)
 
 ### 抽稀接口
 
-`UI/Chart/Base/ChartThinning.h` 提供两种入口，均清空并填入 `out` 下标列表，不读取风速、CNR 或风向量：
+`ChartThinning.h` 提供两种入口，均清空并填入 `out` 下标列表，不读取风速、CNR 或风向量：
 
 ```cpp
 thinUniform(start, step, count, lo, hi, binWidth, perBin, out);
@@ -157,3 +157,10 @@ Windows Qt 6.11.2 / MSVC Release 增量构建通过，无编译警告；现有 C
 从 [LiDAR_DataACQ](https://github.com/Lateef-ZHOU/LiDAR_DataACQ) 的模块分离提交 `94ad6f8` 提取；初始分仓保持运行逻辑，独立整理构建、验证与发布入口。
 
 自有代码采用 [MIT](LICENSE)，Copyright (c) 2026 周涛 (ZHOU TAO)。第三方依赖不随本仓库改为 MIT，参见 [依赖说明](THIRD_PARTY_NOTICES.md)。
+
+## 源码目录（2026-11-03）
+
+公开文件直接放在 `include/`，引用时使用文件名，不再携带原单仓库的业务目录前缀。CMake 目标名称、C++ 类型和 QML 模块名保持不变；使用方须同步更新头文件路径及固定依赖版本。
+图窗、绘图头和着色器均在 `include/`；着色器资源地址仍为 `:/shaders/surface.vert.qsb` 与 `:/shaders/surface.frag.qsb`。
+
+目录整理验证（2026-11-03）：Windows Qt 6.11.2 / MSVC：公开头独立编译、CTest 3/3 通过，主程序构建与八秒冒烟通过。本轮通过本地源码覆盖验证，固定依赖同步更新到本地提交；尚未推送，不代表已验证远端拉取。

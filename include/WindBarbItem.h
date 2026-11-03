@@ -1,5 +1,5 @@
 #pragma once
-#include "UI/Chart/ChartTypes.h"
+#include "ChartTypes.h"
 #include <QVariantMap>
 #include <QtQml/qqmlinfo.h>
 #include <QtQml/qqml.h>
@@ -20,10 +20,10 @@
 #include <QSGVertexColorMaterial>
 #include <QVector>
 
-#include "Algorithm/Wind/VerticalWindProfile.h"
-#include "UI/Chart/Base/ChartThinning.h"
-#include "UI/Chart/Base/ChartTicks.h"    // clock / decimal
-#include "UI/Chart/Base/QuickChartItem.h"
+#include "VerticalWindProfile.h"
+#include "ChartThinning.h"
+#include "ChartTicks.h"    // clock / decimal
+#include "QuickChartItem.h"
 
 // ============================================================
 // WindBarbItem.h —— 风羽图（时间 × 高度，每格一根风羽）

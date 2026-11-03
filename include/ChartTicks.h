@@ -5,7 +5,7 @@
 #include <QList>
 #include <QString>
 
-#include "UI/Chart/Base/QuickChartItem.h" // 只取 AxisText 这个词；依赖是单向的——基类那头看不见本文件
+#include "QuickChartItem.h" // 只取 AxisText 这个词；依赖是单向的——基类那头看不见本文件
 
 // ============================================================
 // ChartTicks.h —— 取刻度的公用零件：两套现成的阶梯（十进制 / 钟表）。

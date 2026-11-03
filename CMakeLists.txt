@@ -21,16 +21,13 @@ qt_add_qml_module(LidarChartCore STATIC URI Lidar.Charts VERSION 1.0
     IMPORT_PATH "${ui_import_root}"
     SOURCES ${headers} QML_FILES ${views})
 add_library(Lidar::ChartCore ALIAS LidarChartCore)
-target_include_directories(LidarChartCore PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include/UI/Chart"
-    "${CMAKE_CURRENT_SOURCE_DIR}/include/UI/Chart/Base"
-    "${CMAKE_CURRENT_SOURCE_DIR}/include/UI/Chart/Surface")
+target_include_directories(LidarChartCore PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_compile_features(LidarChartCore PUBLIC cxx_std_20)
 target_link_libraries(LidarChartCore PUBLIC Lidar::Algorithm Lidar::UICore Qt6::Quick Qt6::GuiPrivate)
 target_compile_definitions(LidarChartCore PUBLIC QT_NO_KEYWORDS NOMINMAX)
-set(surface "${CMAKE_CURRENT_SOURCE_DIR}/include/UI/Chart/Surface")
-qt_add_shaders(LidarChartCore surface_shaders PREFIX /shaders BASE "${surface}/shaders"
-    FILES "${surface}/shaders/surface.vert" "${surface}/shaders/surface.frag")
+set(surface "${CMAKE_CURRENT_SOURCE_DIR}/include")
+qt_add_shaders(LidarChartCore surface_shaders PREFIX /shaders BASE "${surface}"
+    FILES "${surface}/surface.vert" "${surface}/surface.frag")
 
 if(MSVC)
     target_compile_options(LidarChartCore PRIVATE /W4)

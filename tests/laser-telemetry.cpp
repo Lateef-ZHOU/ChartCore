@@ -14,7 +14,7 @@
 #include <QTimer>
 #include <QWheelEvent>
 #include <QtQml/QQmlExtensionPlugin>
-#include "UI/Chart/LaserTelemetryItem.h"
+#include "LaserTelemetryItem.h"
 
 Q_IMPORT_QML_PLUGIN(LidarUIPlugin)
 Q_IMPORT_QML_PLUGIN(LidarChartsPlugin)

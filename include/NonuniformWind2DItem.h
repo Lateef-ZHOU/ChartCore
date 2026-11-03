@@ -10,8 +10,8 @@
 #include <QVector>
 #include <QtQml/qqmlinfo.h>
 #include <QtQml/qqmlregistration.h>
-#include "UI/Chart/Base/ChartTicks.h"
-#include "UI/Chart/Base/SeriesChart.h"
+#include "ChartTicks.h"
+#include "SeriesChart.h"
 
 // 单个非均匀剖面。斜距与数值按同下标对应，只保存最新一帧，不缓存点对或时间历史。
 class NonuniformWind2DItem : public SeriesChart

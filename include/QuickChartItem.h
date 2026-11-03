@@ -23,7 +23,7 @@
 #include <QSGFlatColorMaterial>
 #include <QSGGeometryNode>
 
-#include "UI/Chart/Base/ChartColor.h" // legibleOn：固定色在当前背景上压到看得清
+#include "ChartColor.h" // legibleOn：固定色在当前背景上压到看得清
 #include <QSGNode>
 #include <QString>
 #include <QStringList>

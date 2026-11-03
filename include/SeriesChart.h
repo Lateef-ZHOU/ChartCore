@@ -11,8 +11,8 @@
 #include <QSGNode>
 #include <QString>
 
-#include "UI/Chart/Base/ChartThinning.h"
-#include "UI/Chart/Base/QuickChartItem.h"
+#include "ChartThinning.h"
+#include "QuickChartItem.h"
 
 // ============================================================
 // SeriesChart.h —— **折线族**：把若干条折线画在画布上。

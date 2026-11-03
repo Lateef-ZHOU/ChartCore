@@ -3,8 +3,8 @@
 #include <QMetaType>
 #include <QVariantMap>
 #include <QtQml/qqmlregistration.h>
-#include "Algorithm/Geometry/GimbalModel.h"
-#include "Algorithm/Wind/VerticalWindProfile.h"
+#include "GimbalModel.h"
+#include "VerticalWindProfile.h"
 
 // Qt 消费侧登记原类型；算法与设备核心不依赖 QML。
 using RxTime = std::chrono::system_clock::time_point;
