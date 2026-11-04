@@ -9,10 +9,10 @@ ColumnLayout {
 
     function append(at, values) {
         // 官邸提交同一时刻的完整快照；未知值用 NaN 占位，不能省略字段导致曲线行错位。
-        for (const key of ["laserTemperature", "mcuTemperature", "pa1Current", "pa2Current", "pa3Current", "sdCurrent", "voltage", "pztOffset"]) {
+        for (const key of [...temperatures.channelKeys, ...currents.channelKeys, ...voltage.channelKeys]) {
             const value = values[key]
             if (typeof value !== "number" || (!Number.isFinite(value) && !Number.isNaN(value))) {
-                console.warn("LaserTelemetryChart requires a complete eight-value snapshot")
+                console.warn("LaserTelemetryChart requires a complete snapshot")
                 return false
             }
         }
@@ -33,8 +33,7 @@ ColumnLayout {
         Layout.fillWidth: true
         Layout.fillHeight: true
         Layout.preferredHeight: 1
-        configuration: ({ quantity: LaserTelemetryItem.Temperature,
-            minimum: root.configuration.temperature.minimum, maximum: root.configuration.temperature.maximum,
+        configuration: Object.assign({}, root.configuration.temperature, { quantity: LaserTelemetryItem.Temperature,
             windowSeconds: root.configuration.windowSeconds, capacity: root.configuration.capacity })
         onXViewChanged: function(lo, hi, follow, anchor) {
             currents.applyXView(lo, hi, follow, anchor)
@@ -49,8 +48,7 @@ ColumnLayout {
         Layout.fillWidth: true
         Layout.fillHeight: true
         Layout.preferredHeight: 1
-        configuration: ({ quantity: LaserTelemetryItem.Current,
-            minimum: root.configuration.current.minimum, maximum: root.configuration.current.maximum,
+        configuration: Object.assign({}, root.configuration.current, { quantity: LaserTelemetryItem.Current,
             windowSeconds: root.configuration.windowSeconds, capacity: root.configuration.capacity })
         onXViewChanged: function(lo, hi, follow, anchor) {
             temperatures.applyXView(lo, hi, follow, anchor)
@@ -65,8 +63,7 @@ ColumnLayout {
         Layout.fillWidth: true
         Layout.fillHeight: true
         Layout.preferredHeight: 1
-        configuration: ({ quantity: LaserTelemetryItem.Voltage,
-            minimum: root.configuration.voltage.minimum, maximum: root.configuration.voltage.maximum,
+        configuration: Object.assign({}, root.configuration.voltage, { quantity: LaserTelemetryItem.Voltage,
             windowSeconds: root.configuration.windowSeconds, capacity: root.configuration.capacity })
         onXViewChanged: function(lo, hi, follow, anchor) {
             temperatures.applyXView(lo, hi, follow, anchor)

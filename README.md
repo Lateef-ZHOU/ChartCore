@@ -102,7 +102,7 @@ Algorithm 固定提交 `224c784117b775177a52d69fe0d61858b39ee867` 已发布。20
 
 ## 激光器三组趋势图（2026-10-28 用户定）
 
-`LaserTelemetryChart.qml` 暂作为专用图种放在 ChartCore，纵向排列三幅图：温度（激光器、MCU）、电流（PA1、PA2、PA3、SD）、电压（系统电压、PZT 偏移量）。复用 SeriesChart 的折线、图例、抽稀和手势；AngleChart 与风速/CNR 图保持各自接口，暂不合并成通用多图框架。后续是否统一 Plot 接口仍待定。
+三联趋势图 `LaserTelemetryChart` 纵向排列温度、电流、电压三个面板，共用时间轴。各面板可在创建配置中传入 `channels: [{key, name}, ...]` 指定快照字段和图例。省略时沿用激光器的 2/4/2 通道。三个面板收到完整快照后一起追加，单曲线也显示图例。
 
 ```qml
 import Lidar.Charts

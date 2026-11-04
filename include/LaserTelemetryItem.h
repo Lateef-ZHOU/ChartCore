@@ -3,7 +3,7 @@
 #include <chrono>
 #include <cmath>
 #include <optional>
-#include <span>
+#include <QStringList>
 #include <utility>
 #include <QColor>
 #include <QDateTime>
@@ -18,12 +18,12 @@
 #include "SeriesChart.h"
 #include "ChartTypes.h"
 
-// 激光器趋势图的一组量纲：2 路温度 / 4 路电流 / 2 路电压。
-// 暂不作为可配置任意通道的通用 Plot；不认识协议、设备或查询命令。
+// 趋势图的通道仅在创建时配置；未指定时沿用激光器的三组图例。
 class LaserTelemetryItem : public SeriesChart
 {
     Q_OBJECT
     QML_ELEMENT
+    Q_PROPERTY(QStringList channelKeys READ channelKeys)
     Q_PROPERTY(QVariantMap configuration READ configuration WRITE setConfiguration REQUIRED)
 public:
     enum Quantity { Temperature, Current, Voltage };
@@ -39,9 +39,13 @@ public:
         configure(configuration);
     }
 
+    [[nodiscard]] const QStringList &channelKeys() const { return keys_; }
     [[nodiscard]] QVariantMap configuration() const
     {
-        return {{"quantity", quantity_}, {"minimum", minimum_}, {"maximum", maximum_},
+        QVariantList channels;
+        for (qsizetype i = 0; i < keys_.size(); ++i)
+            channels.append(QVariantMap{{"key", keys_[i]}, {"name", series_[i].name}});
+        return {{"channels", channels}, {"quantity", quantity_}, {"minimum", minimum_}, {"maximum", maximum_},
                 {"windowSeconds", timeWindowSeconds()}, {"capacity", capacity_}};
     }
     void setConfiguration(const QVariantMap &value)
@@ -75,8 +79,20 @@ private:
         maximum_ = maximum;
         capacity_ = capacity;
         series_.clear();
-        for (const auto &channel : channels())
-            series_.append(Series{QString::fromUtf8(channel.name), QColor(channel.color), {}});
+        keys_.clear();
+        const QVariantList channels = value.value("channels", defaultChannels(quantity_)).toList();
+        if (channels.isEmpty()) qFatal("Telemetry panel requires at least one channel.");
+        static constexpr std::array colors{"#1e90ff", "#ff6432", "#2ea043", "#e6ad32", "#9467bd", "#17becf"};
+        for (const auto &entry : channels) {
+            const auto channel = entry.toMap();
+            const QString key = channel.value("key").toString();
+            const QString name = channel.value("name").toString();
+            if (key.isEmpty() || name.isEmpty() || keys_.contains(key))
+                qFatal("Telemetry channel requires a unique key and a legend name.");
+            const auto colorIndex = (keys_.size() + (quantity_ == Voltage ? 4 : 0)) % colors.size();
+            keys_.append(key);
+            series_.append(Series{name, QColor(colors[colorIndex]), {}});
+        }
         yAxis_.title = quantity_ == Temperature ? QStringLiteral("温度 (°C)")
                       : quantity_ == Current ? QStringLiteral("电流 (A)") : QStringLiteral("电压 (V)");
         yAxis_.lo = minimum;
@@ -92,18 +108,17 @@ public:
     Q_INVOKABLE void append(const RxTime at, const QVariantMap &values)
     {
         const double seconds = std::chrono::duration<double>(at.time_since_epoch()).count();
-        const auto group = channels();
-        for (const auto &channel : group) {
-            const auto it = values.constFind(QLatin1String(channel.key));
+        for (const auto &key : keys_) {
+            const auto it = values.constFind(key);
             bool ok = false;
             const double value = it == values.cend() ? 0.0 : it->toDouble(&ok);
             if (!ok || std::isinf(value)) {
-                qmlWarning(this) << "Incomplete or invalid telemetry snapshot:" << channel.key;
+                qmlWarning(this) << "Incomplete or invalid telemetry snapshot:" << key;
                 return;
             }
         }
-        for (qsizetype i = 0; i < static_cast<qsizetype>(group.size()); ++i) {
-            const double value = values.value(QLatin1String(group[static_cast<size_t>(i)].key)).toDouble();
+        for (qsizetype i = 0; i < keys_.size(); ++i) {
+            const double value = values.value(keys_[i]).toDouble();
             auto &points = series_[i].points;
             points.append(QPointF(seconds, value));
             if (points.size() > capacity_)
@@ -153,20 +168,17 @@ protected:
     }
 
 private:
-    struct Channel { const char *key; const char *name; const char *color; };
-    [[nodiscard]] std::span<const Channel> channels() const
+    QStringList keys_;
+    static QVariantList defaultChannels(Quantity quantity)
     {
-        static constexpr std::array<Channel, 2> temperatures{{
-            {"laserTemperature", "激光器", "#1e90ff"}, {"mcuTemperature", "MCU", "#ff6432"}}};
-        static constexpr std::array<Channel, 4> currents{{
-            {"pa1Current", "PA1", "#1e90ff"}, {"pa2Current", "PA2", "#ff6432"},
-            {"pa3Current", "PA3", "#2ea043"}, {"sdCurrent", "SD", "#e6ad32"}}};
-        static constexpr std::array<Channel, 2> voltage{{
-            {"voltage", "系统电压", "#9467bd"}, {"pztOffset", "PZT偏移量", "#17becf"}}};
-        switch (quantity_) {
-        case Temperature: return temperatures;
-        case Current: return currents;
-        case Voltage: return voltage;
+        const auto channel = [](QString key, QString name) -> QVariant {
+            return QVariantMap{{"key", key}, {"name", name}};
+        };
+        switch (quantity) {
+        case Temperature: return {channel("laserTemperature", "激光器"), channel("mcuTemperature", "MCU")};
+        case Current: return {channel("pa1Current", "PA1"), channel("pa2Current", "PA2"),
+                              channel("pa3Current", "PA3"), channel("sdCurrent", "SD")};
+        case Voltage: return {channel("voltage", "系统电压"), channel("pztOffset", "PZT偏移量")};
         }
         Q_UNREACHABLE();
     }
