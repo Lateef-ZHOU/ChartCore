@@ -148,10 +148,6 @@ int main(int argc, char **argv)
     {
         ProfileProbe item(profileConfig());
         item.setSize({600, 500});
-        item.applyHover(item.yAxis().lo);
-        check(item.hover() && item.hover()->text.contains("0.000"), "initial profile starts at zero");
-        item.applyHover(item.yAxis().hi);
-        check(item.hover() && item.hover()->text.contains("0.000"), "initial zero line spans configured range");
         QVector<double> ranges{0, 15, 30, 3000, 3060, 12000};
         QVector<double> values{1, 2, 3, 4, 5, 6};
         check(item.setData(ranges, values), "accept parallel arrays");
@@ -237,7 +233,7 @@ Window {
             id: profile; objectName: "profiles"
             Layout.fillWidth: true; Layout.fillHeight: true
             specification: ({windMin: -30, windMax: 30, cnrMin: -30, cnrMax: 30,
-                             rangeMinimum: 0, rangeMaximum: 1500})
+                             rangeMinimum: 0, rangeMaximum: 1500, ranges: [0, 15, 30, 300, 1500]})
         }
         NonuniformWindBarbItem {
             id: barbs; objectName: "barbs"
@@ -258,6 +254,11 @@ Window {
     auto *cnr = root->findChild<NonuniformWind2DItem *>("cnr");
     auto *barbs = root->findChild<NonuniformWindBarbItem *>("barbs");
     check(window && wind && cnr && barbs, "QML registered types assemble");
+    for (auto *profile : {wind, cnr}) {
+        profile->applyHover(28);
+        check(profile->hover() && profile->hover()->at == 30
+              && profile->hover()->text.contains("0.000"), "initial hover snaps to interior gate");
+    }
     bool accepted = false;
     QObject::connect(&source, &Source::delivered, &source, [&](bool ok) { accepted = ok; });
     Q_EMIT source.profile({0, 15, 30, 150, 300, 600, 900, 1500}, {1, 3, 5, -2, 6, 12, 8, 4});

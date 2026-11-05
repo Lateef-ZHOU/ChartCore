@@ -5,6 +5,13 @@ RowLayout {
     id: root
     required property var specification
     spacing: 16
+    // 初始零值逐门显示，位置由型号提供；真实回报继续整帧替换。
+    Component.onCompleted: {
+        const ranges = root.specification.ranges ?? []
+        const zeros = new Array(ranges.length).fill(0)
+        root.updateWS(ranges, zeros)
+        root.updateCNR(ranges, zeros)
+    }
     function updateWS(ranges, values) { return wind.setData(ranges, values) }
     function updateCNR(ranges, values) { return cnr.setData(ranges, values) }
     NonuniformWind2DItem {
