@@ -52,6 +52,10 @@ public:
         initializeInteraction(true, config.value("rightAxis").toBool());
         xAxis_.lo = low; xAxis_.hi = high;
         yAxis_.lo = rangeLow; yAxis_.hi = rangeHigh;
+        // 与均匀剖面一致，创建时显示零值线；两端点仅表达初始显示范围，不假定距离门分布。
+        ranges_ = {rangeLow, rangeHigh};
+        values_ = {0.0, 0.0};
+        breaks_.clear();
     }
 
     // 入口一次检查：拒绝时完整保留上一帧。QVector 按值接纳，生产者后续修改会隐式分离。

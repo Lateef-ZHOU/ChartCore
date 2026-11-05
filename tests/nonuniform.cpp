@@ -148,6 +148,10 @@ int main(int argc, char **argv)
     {
         ProfileProbe item(profileConfig());
         item.setSize({600, 500});
+        item.applyHover(item.yAxis().lo);
+        check(item.hover() && item.hover()->text.contains("0.000"), "initial profile starts at zero");
+        item.applyHover(item.yAxis().hi);
+        check(item.hover() && item.hover()->text.contains("0.000"), "initial zero line spans configured range");
         QVector<double> ranges{0, 15, 30, 3000, 3060, 12000};
         QVector<double> values{1, 2, 3, 4, 5, 6};
         check(item.setData(ranges, values), "accept parallel arrays");
