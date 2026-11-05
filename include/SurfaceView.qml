@@ -20,7 +20,7 @@ ColumnLayout {
     FieldStrip {
         FieldStrip.Col {
             label: qsTr("功率谱范围")
-            Layout.preferredWidth: 220
+            weight: 2
             RealField {
                 id: lower
                 Layout.fillWidth: true
@@ -43,11 +43,11 @@ ColumnLayout {
         FieldStrip.Col {
             label: qsTr("视角")
             Button { text: qsTr("复位"); onClicked: surface.resetCamera() }
-            Label { text: qsTr("左键旋转 · 滚轮缩放") }
+            HintText { text: qsTr("左键旋转 · 滚轮缩放") }
         }
         FieldStrip.Col {
             label: qsTr("功率谱 3D")
-            Label { text: qsTr("固定配色；量程两端相等时自适应") }
+            HintText { text: qsTr("固定配色；量程两端相等时自适应") }
         }
     }
 }

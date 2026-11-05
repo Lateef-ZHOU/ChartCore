@@ -164,3 +164,9 @@ Windows Qt 6.11.2 / MSVC Release 增量构建通过，无编译警告；现有 C
 图窗、绘图头和着色器均在 `include/`；着色器资源地址仍为 `:/shaders/surface.vert.qsb` 与 `:/shaders/surface.frag.qsb`。
 
 目录整理验证（2026-11-03）：Windows Qt 6.11.2 / MSVC：公开头独立编译、CTest 3/3 通过，主程序构建与八秒冒烟通过。本轮通过本地源码覆盖验证，固定依赖同步更新到本地提交；尚未推送，不代表已验证远端拉取。
+
+
+## 控制区与转台文案（2026-11-05）
+
+SurfaceView 的双输入范围列使用 UICore FieldStrip.Col.weight=2；两段操作说明复用 HintText，按可用宽度换行。三个分区、复位行为、范围校验和图窗与控制区之间的4像素间距保持。AngleChartItem 图例统一为“转台水平”“转台俯仰”，世界方位/高度及曲线配置不变。
+验证：主程序 Windows Release 增量构建、桌面八秒冒烟和 D3D11 四窗口装配检查通过；截图核对功率谱底部控制与转台图例。既有 CDL5/Qt C4702 警告保持。未连接硬件，未推送。

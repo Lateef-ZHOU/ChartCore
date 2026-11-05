@@ -49,8 +49,8 @@ public:
         : SeriesChart(parent)
     {
         static const std::array<std::pair<QString, QColor>, kCurveCount> kStyles{{
-            {QStringLiteral("云台水平"), QColor(30, 144, 255)},
-            {QStringLiteral("云台俯仰"), QColor(255, 100, 50)},
+            {QStringLiteral("转台水平"), QColor(30, 144, 255)},
+            {QStringLiteral("转台俯仰"), QColor(255, 100, 50)},
             {QStringLiteral("世界方位"), QColor(46, 160, 67)},
             {QStringLiteral("世界高度"), QColor(148, 103, 189)},
         }};
