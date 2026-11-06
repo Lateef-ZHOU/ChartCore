@@ -16,6 +16,8 @@ ColumnLayout {
         rows: root.specification.rows
         columns: root.specification.columns
         maxPower: root.specification.powerMax
+        rangeStart: root.specification.rangeStart ?? 0
+        rangeStep: root.specification.rangeStep ?? 0
     }
     FieldStrip {
         FieldStrip.Col {
