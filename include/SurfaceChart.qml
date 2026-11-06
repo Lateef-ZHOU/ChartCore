@@ -9,8 +9,6 @@ Item {
     required property int rows
     required property int columns
     required property real maxPower
-    property real rangeStart: 0
-    property real rangeStep: 0
     readonly property real valLo: state.low
     readonly property real valHi: state.high
     readonly property int receivedCount: state.received
@@ -58,7 +56,6 @@ Item {
     SurfaceItem {
         id: surface
         anchors.fill: parent
-        configuration: ({ rows: root.rows, columns: root.columns,
-                          rangeStart: root.rangeStart, rangeStep: root.rangeStep })
+        configuration: ({ rows: root.rows, columns: root.columns })
     }
 }

@@ -47,7 +47,7 @@ public:
     QVariantMap configuration() const
     {
         return {{"rows", grid_.rows},
-                {"columns", grid_.columns}, {"rangeStart", rangeAxis_.start}, {"rangeStep", rangeAxis_.step}};
+                {"columns", grid_.columns}};
     }
     void setConfiguration(const QVariantMap &value)
     {
@@ -59,14 +59,7 @@ public:
         const SurfaceGrid grid{value.value("rows").toInt(), value.value("columns").toInt()};
         if (grid.rows < 2 || grid.columns < 2 || qint64(grid.rows) * grid.columns > std::numeric_limits<int>::max() / 6)
             qFatal("Invalid surface grid.");
-        const SurfaceAxes::RangeAxis range{value.value("rangeStart", 0.0).toDouble(),
-                                           value.value("rangeStep", 0.0).toDouble()};
-        const double last = range.start + (grid.rows - 1) * range.step;
-        if (!std::isfinite(range.start) || !std::isfinite(range.step) || range.step < 0
-            || !std::isfinite(last) || (range.step > 0 && !(last > range.start)))
-            qFatal("Invalid surface range axis.");
         grid_ = grid;
-        rangeAxis_ = range;
     }
 
     Q_INVOKABLE bool setData(const QVector<double> &values, double low, double high)
@@ -120,7 +113,7 @@ protected:
     }
 
 private:
-    void syncAxes() { axes_->setView(camera_, surface_, size(), rangeAxis_); }
+    void syncAxes() { axes_->setView(camera_, surface_, size()); }
     void updateView() { syncAxes(); update(); }
     void syncTargetSize()
     {
@@ -137,7 +130,6 @@ private:
         update();
     }
     SurfaceGrid grid_{2, 2};
-    SurfaceAxes::RangeAxis rangeAxis_;
     SurfaceAxesItem *const axes_;
     PreparedSurface surface_;
     SurfaceCamera camera_;

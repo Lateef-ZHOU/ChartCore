@@ -149,22 +149,13 @@ inline QVector<double> ticks(double low, double high, int target)
     return values;
 }
 
-struct RangeAxis {
-    double start = 0;
-    double step = 0; // Zero keeps distance-gate indices.
-};
-
-inline Scene makeScene(const Projection &projection, SurfaceGrid grid, double zMin, double zMax,
-                       const QFont &font, RangeAxis range = {})
+inline Scene makeScene(const Projection &projection, SurfaceGrid grid, double zMin, double zMax, const QFont &font)
 {
     Scene scene;
     scene.axes = placeAxes(projection);
     scene.scales = {{QStringLiteral("频点 (下标)"), 0, static_cast<double>(grid.columns - 1), {}},
                     {QStringLiteral("距离门 (下标)"), 0, static_cast<double>(grid.rows - 1), {}},
                     {QStringLiteral("功率谱值"), zMin, zMax, {}}};
-    if (range.step > 0)
-        scene.scales[1] = {QStringLiteral("斜距 (m)"), range.start,
-                           range.start + (grid.rows - 1) * range.step, {}};
     const QFontMetricsF metrics(font);
     QVector<Label> endpoints, interiors, titles;
     for (int axis = 0; axis < 3; ++axis) {
@@ -222,11 +213,11 @@ inline Frame projectScene(const Scene &scene, const Projection &projection)
 }
 
 inline Frame layout(const SurfaceCamera &camera, const QSizeF &size, SurfaceGrid grid,
-                    double zMin, double zMax, const QFont &font, RangeAxis range = {})
+                    double zMin, double zMax, const QFont &font)
 {
     if (size.width() < 1 || size.height() < 1 || grid.rows < 2 || grid.columns < 2) return {};
     const Projection projection(camera, size);
-    return projectScene(makeScene(projection, grid, zMin, zMax, font, range), projection);
+    return projectScene(makeScene(projection, grid, zMin, zMax, font), projection);
 }
 }
 
@@ -243,8 +234,7 @@ public:
         connect(this, &QQuickItem::paletteChanged, this, &SurfaceAxesItem::syncPalette);
         syncPalette();
     }
-    void setView(const SurfaceCamera &camera, const PreparedSurface &surface, const QSizeF &size,
-                 SurfaceAxes::RangeAxis range)
+    void setView(const SurfaceCamera &camera, const PreparedSurface &surface, const QSizeF &size)
     {
         if (camera_.view() == camera.view() && camera_.zoom == camera.zoom && grid_ == surface.grid
             && low_ == surface.zMin && high_ == surface.zMax && size == this->size()) return;
@@ -253,7 +243,7 @@ public:
         low_ = surface.zMin;
         high_ = surface.zMax;
         setSize(size);
-        frame_ = SurfaceAxes::layout(camera_, size, grid_, low_, high_, font_, range);
+        frame_ = SurfaceAxes::layout(camera_, size, grid_, low_, high_, font_);
         update();
     }
     const SurfaceAxes::Frame &frame() const { return frame_; }

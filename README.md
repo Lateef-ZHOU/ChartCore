@@ -12,7 +12,6 @@ Qt Quick 二维图表与 QRhi 三维高度面，以及配套 QML 图窗。Window
 - 上游：[Algorithm](https://github.com/Lateef-ZHOU/Algorithm), [UICore](https://github.com/Lateef-ZHOU/UICore)。已有同名 CMake 目标时复用；否则 FetchContent 拉取固定完整提交。
 - 本仓库不依赖 LiDAR_DataACQ 源码、应用目录或设备型号；不包含第三方二进制。
 - 使用 Qt Quick/QML、GuiPrivate/QRhi 和 ShaderTools；必须使用同一套 Qt 开发包/运行库，升级 Qt 后重新构建和验证。
-- SurfaceView 规格可提供 `rangeStart` 和正值 `rangeStep`，距离轴按米标出等间隔行坐标。省略时使用距离门下标。
 - Surface 固定宽高各 2 倍 SSAA，完整 XY 域、Z 钳值、无 Roll 旋转及滚轮缩放。QML 持原谱，绘制器仅持显示快照；二维图自行保留历史。
 - 图形后端由应用选择；Windows 可使用 Direct3D11，Linux 可使用 Qt RHI 支持的后端。离屏测试验证装配，不代表硬件 GPU 画质验证。
 - SeriesChart 对所有非空曲线组显示图例，单条曲线也显示名称和颜色；没有曲线时不显示图例。
