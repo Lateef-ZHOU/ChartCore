@@ -58,7 +58,7 @@ class Source : public QObject
 {
     Q_OBJECT
 Q_SIGNALS:
-    void profile(QVector<double> values);
+    void profile(LinearArray<double> values);
     void column(VerticalWindProfilePtr frame);
 };
 
@@ -115,8 +115,8 @@ static QVariantMap barbConfig()
 }
 static VerticalWindProfilePtr frame(RxTime at, double startHeight)
 {
-    return std::make_shared<const VerticalWindProfileUnit>(at, startHeight, 15.0,
-        std::vector<LinAlg::Vec3>{{2, 1, 0}, {3, 2, 0}, {4, 3, 0}});
+    return std::make_shared<const VerticalWindProfileUnit>(VerticalWindProfileUnit{at,
+        LinearArray<LinAlg::Vec3>(startHeight, 15.0, {{2, 1, 0}, {3, 2, 0}, {4, 3, 0}})});
 }
 
 int main(int argc, char **argv)
@@ -131,8 +131,11 @@ int main(int argc, char **argv)
     {
         UniformProbe item(profileConfig(0));
         item.setSize({600, 200});
-        QVector<double> values(1000, 1);
+        LinearArray<double> values(0, 60, std::vector<double>(1000, 1));
         values[100] = nan; values[101] = nan;
+        item.setData(LinearArray<double>(0, 30, values));
+        item.applyHover(100.5);
+        check(item.hover()->text.contains("0.000"), "data on another grid rejected");
         item.setData(values);
         QList<int> selected;
         item.thin({}, QRectF(0, 0, 600, 200), selected);
@@ -143,7 +146,7 @@ int main(int argc, char **argv)
         check(item.configuration().value("rangeStart").toDouble() == 0, "range start is part of the creation configuration");
         UniformProbe shifted(profileConfig(30));
         shifted.setSize({600, 200});
-        shifted.setData(values);
+        shifted.setData(LinearArray<double>(30, 60, values));
         shifted.applyHover(2.5);
         check(shifted.hover()->text.contains("150 m"), "explicit range start shifts every gate");
     }
@@ -156,12 +159,13 @@ int main(int argc, char **argv)
         check(item.columnCount() == 1 && item.columnAt(0).winds.data() == first->winds.data(),
               "history shares whole immutable frame, no array copies");
         first.reset();
-        item.appendColumn(std::make_shared<const VerticalWindProfileUnit>(now, 0.0, 0.0, std::vector<LinAlg::Vec3>{{1, 2, 3}}));
+        item.appendColumn(std::make_shared<const VerticalWindProfileUnit>(
+            VerticalWindProfileUnit{now, LinearArray<LinAlg::Vec3>(0.0, 0.0, {{1, 2, 3}})}));
         check(item.columnCount() == 1, "invalid height grid rejected before ring changes");
         for (int i = 1; i <= 4; ++i)
             item.appendColumn(frame(now + std::chrono::seconds(i), i * 100));
         check(item.columnCount() == 3 && weak.expired(), "ring capacity enforced and oldest whole frame released");
-        check(item.columnAt(0).heightAt(0) == 200 && item.columnAt(2).heightAt(2) == 430,
+        check(item.columnAt(0).winds.positionAt(0) == 200 && item.columnAt(2).winds.positionAt(2) == 430,
               "wrapped ring preserves start and step heights");
     }
     Source source;
@@ -205,15 +209,15 @@ Window {
     auto *cnr = root->findChild<Wind2DItem *>("cnr");
     auto *barbs = root->findChild<WindBarbItem *>("barbs");
     check(window && wind && cnr && barbs, "QML registered types assemble");
-    Q_EMIT source.profile({1, 3, 5, -2, 6, 12, 8, 4});
+    Q_EMIT source.profile(LinearArray<double>(0, 15, {1, 3, 5, -2, 6, 12, 8, 4}));
     wind->applyHover(3.5);
     check(wind->hover() && wind->hover()->text.contains("45 m") && wind->hover()->text.contains("-2.000"),
           "QML forwards values onto start + k x spacing gates");
     for (int i = 0; i < 90; i += 5) {
         std::vector<LinAlg::Vec3> winds;
         for (int k = 0; k < 8; ++k) winds.emplace_back(3 + k / 5.0, 2 + i / 10.0, 0);
-        Q_EMIT source.column(std::make_shared<const VerticalWindProfileUnit>(now - std::chrono::seconds(90 - i), 0.0, 7.5,
-                                                                             std::move(winds)));
+        Q_EMIT source.column(std::make_shared<const VerticalWindProfileUnit>(VerticalWindProfileUnit{
+            now - std::chrono::seconds(90 - i), LinearArray<LinAlg::Vec3>(0.0, 7.5, std::move(winds))}));
     }
     check(warnings == 0, "QML forwards typed immutable whole frame without type warnings");
     wait(200);

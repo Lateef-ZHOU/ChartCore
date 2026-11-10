@@ -54,3 +54,11 @@ struct VerticalWindProfileQml
     QML_FOREIGN(VerticalWindProfilePtr)
     QML_ANONYMOUS
 };
+
+// 逐门剖面（斜距线性轴 + 数值）：QML 只原样转交给径向风图，不展开。
+struct LinearSeriesQml
+{
+    Q_GADGET
+    QML_FOREIGN(LinearArray<double>)
+    QML_ANONYMOUS
+};

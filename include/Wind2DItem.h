@@ -15,7 +15,7 @@
 #include <QString>
 #include <QVector>
 
-#include "RangeGate.h" // 门下标 → 斜距（与风廓线共用的唯一一处换算）
+#include "LinearArray.h"
 #include "ChartTicks.h"
 #include "SeriesChart.h"
 
@@ -32,7 +32,7 @@
 //
 // **纵轴是沿波束的斜距，不是高度**：本图画的是**单束**的逐门量，束是斜的。高度 = 斜距 ×
 // sin(高度角) 要知道束的朝向，而本图不认识朝向——那是风廓线的事（WindProfile）。
-// 门 → 斜距的口径只认 RangeGate::rangeOf 那一处（与风廓线共用），起点与门距由创建配置给出。
+// 第 k 门斜距 = 起点 + k·门距，起点与门距由创建配置给出；每帧数据是同一网格上的 LinearArray。
 //
 // **纵轴的视口单位是门格**：第 k 门占 [k, k+1)，折线过格心 k+½；米只出现在刻度文字与悬停读数里
 // （见 ticksY / hoverProbe）。这只对斜距成立：门 → 斜距不随束的朝向变，所以每一帧都落在同一套
@@ -103,11 +103,11 @@ public:
     }
 
     // [主] 一帧数据到达：**原地只写值那一列**。
-    // **尺寸不对整帧不收**：按短者截断的话，短帧会拼出一条新旧混杂
-    // 的曲线。
-    Q_INVOKABLE void setData(const QVector<double> &data)
+    // **网格不对整帧不收**：门数、起点或门距与创建配置不同就拒收；按短者截断的话，短帧会拼出
+    // 一条新旧混杂的曲线。
+    Q_INVOKABLE void setData(const LinearArray<double> &data)
     {
-        if (data.size() != rowCount_)
+        if (data.size() != static_cast<std::size_t>(rowCount_) || data.start != rangeStart_ || data.step != distPerBin_)
             return;
         QList<QPointF> &points = series_[0].points;
         breaks_.clear();
@@ -148,11 +148,11 @@ protected:
     {
         return ChartTicks::decimal(lo, hi, target);
     }
-    // 纵轴视口走门格，字写**斜距（米）**：格心 k+½ ↦ 第 k 门的斜距 rangeOf(k)，而 rangeOf 对 k 线性
-    // ⇒ 斜距(v) = rangeOf(0) + (v − ½)·门距。
+    // 纵轴视口走门格，字写**斜距（米）**：格心 k+½ ↦ 第 k 门的斜距 起点 + k·门距
+    // ⇒ 斜距(v) = 起点 + (v − ½)·门距。
     [[nodiscard]] QList<AxisText> ticksY(const double lo, const double hi, const int target) const override
     {
-        return ChartTicks::decimal(lo, hi, target, RangeGate::rangeOf(0, rangeStart_, distPerBin_) - 0.5 * distPerBin_,
+        return ChartTicks::decimal(lo, hi, target, rangeStart_ - 0.5 * distPerBin_,
                                    distPerBin_);
     }
 
@@ -165,7 +165,7 @@ protected:
         const int row = std::clamp(static_cast<int>(std::floor(dataY)), 0, rowCount_ - 1);
         const QPointF &p = points[row];
         return AxisText{p.y(), QStringLiteral("斜距  %1 m\n%2  %3")
-                                    .arg(RangeGate::rangeOf(row, rangeStart_, distPerBin_), 0, 'f', 0)
+                                    .arg(rangeStart_ + row * distPerBin_, 0, 'f', 0)
                                     .arg(series_[0].name)
                                     .arg(p.x(), 0, 'f', 3)};
     }

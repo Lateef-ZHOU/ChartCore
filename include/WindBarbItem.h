@@ -116,16 +116,9 @@ public:
     }
 
 protected:
-    // 临时只读视图，不保存第二份数据；高度由 start/step 定位。
-    struct Column
-    {
-        RxTime at;
-        std::span<const LinAlg::Vec3> winds;
-        double start = 0, step = 1;
-        double heightAt(int i) const { return start + double(i) * step; }
-    };
+    // 历史里的整帧只读借出，不保存第二份数据；层高度由 winds 的线性轴定位。
     virtual int columnCount() const = 0;
-    virtual Column columnAt(int i) const = 0;
+    virtual const VerticalWindProfileUnit &columnAt(int i) const = 0;
     virtual void resetHistory(std::size_t capacity) = 0;
     int minimumLayers() const { return heightBins_; }
     void columnAccepted(RxTime at)
@@ -163,15 +156,15 @@ private:
     {
         double result = std::numeric_limits<double>::infinity();
         for (int i = 0; i < columnCount(); ++i)
-            result = std::min(result, columnAt(i).heightAt(0));
+            result = std::min(result, columnAt(i).winds.positionAt(0));
         return result;
     }
     [[nodiscard]] double highest() const
     {
         double result = -std::numeric_limits<double>::infinity();
         for (int i = 0; i < columnCount(); ++i) {
-            const auto column = columnAt(i);
-            result = std::max(result, column.heightAt(static_cast<int>(column.winds.size()) - 1));
+            const auto &column = columnAt(i);
+            result = std::max(result, column.winds.positionAt(column.winds.size() - 1));
         }
         return result;
     }
@@ -455,9 +448,9 @@ inline int WindBarbChart::drawMarks(QSGNode *clip, const int firstIndex, const Q
     const auto eachBarb = [&](auto &&visit) {
         for (const int c : binPick_)
         {
-            const auto profile = columnAt(c);
+            const auto &profile = columnAt(c);
             const double x = xAxis_.toPixel((timeBinOf(timeAt(c)) + 0.5) * binSec, plot.left(), plot.right());
-            ChartThinning::thinUniform(profile.start, profile.step, static_cast<int>(profile.winds.size()),
+            ChartThinning::thinUniform(profile.winds.start, profile.winds.step, static_cast<int>(profile.winds.size()),
                 yAxis_.lo, yAxis_.hi, binM, 1, gatePick_);
             for (const int k : gatePick_)
             {
@@ -465,7 +458,7 @@ inline int WindBarbChart::drawMarks(QSGNode *clip, const int firstIndex, const Q
                 if (!wind) continue; // 桶里的首门缺测：这一格不画，不往后找。
                 const double s = std::hypot(wind.x(), wind.y());
                 if (!std::isfinite(s)) continue;
-                const double mid = (std::floor(profile.heightAt(k) / binM) + 0.5) * binM;
+                const double mid = (std::floor(profile.winds.positionAt(k) / binM) + 0.5) * binM;
                 if (mid + halfY < yAxis_.lo || mid - halfY > yAxis_.hi)
                     continue;
                 visit(x, yAxis_.toPixel(mid, plot.bottom(), plot.top()), s, wind);
@@ -515,11 +508,7 @@ public:
     }
 protected:
     int columnCount() const override { return static_cast<int>(history_.size()); }
-    Column columnAt(int i) const override
-    {
-        const auto &frame = *history_.at(i);
-        return {frame.at, frame.winds, frame.startHeightM, frame.heightStepM};
-    }
+    const VerticalWindProfileUnit &columnAt(int i) const override { return *history_.at(i); }
     void resetHistory(std::size_t capacity) override { history_ = VerticalWindProfileHistory(capacity); }
 private:
     VerticalWindProfileHistory history_{1};
