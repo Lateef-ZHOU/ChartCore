@@ -1,4 +1,5 @@
 #pragma once
+#include "LinearArray.h"
 #include <algorithm>
 #include <cmath>
 #include <ranges>
@@ -85,13 +86,15 @@ void thinIrregular(const Positions &positions, const double lo, const double hi,
     flush();
 }
 
-// 均匀序列：只需要位置起点、正步进和数量。直接反算每桶末端，不遍历原始数组。
+// 均匀序列：位置取自线性数组的起点、步长与长度，直接反算每桶末端，不遍历元素。
 // 与非均匀版使用同一套绝对位置桶和两端哑桶；每个非空桶留首个或首末下标。
 // 输入由创建/推送入口保证有效；这里的空输出处理只针对空数据或尚未布局的视口。
-template <class Out>
-void thinUniform(const double start, const double step, const int count,
-                 const double lo, const double hi, const double binWidth, const int perBin, Out &out)
+template <class T, class Out>
+void thinUniform(const LinearArray<T> &positions, const double lo, const double hi, const double binWidth,
+                 const int perBin, Out &out)
 {
+    const double start = positions.start, step = positions.step;
+    const int count = static_cast<int>(positions.size());
     out.clear();
     if (count <= 0 || !(binWidth > 0.0) || !(step > 0.0)) return;
     const double binLo = std::floor(lo / binWidth) - 1.0;

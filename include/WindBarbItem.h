@@ -450,8 +450,7 @@ inline int WindBarbChart::drawMarks(QSGNode *clip, const int firstIndex, const Q
         {
             const auto &profile = columnAt(c);
             const double x = xAxis_.toPixel((timeBinOf(timeAt(c)) + 0.5) * binSec, plot.left(), plot.right());
-            ChartThinning::thinUniform(profile.winds.start, profile.winds.step, static_cast<int>(profile.winds.size()),
-                yAxis_.lo, yAxis_.hi, binM, 1, gatePick_);
+            ChartThinning::thinUniform(profile.winds, yAxis_.lo, yAxis_.hi, binM, 1, gatePick_);
             for (const int k : gatePick_)
             {
                 const auto &wind = profile.winds[k];

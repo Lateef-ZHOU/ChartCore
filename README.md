@@ -1,5 +1,7 @@
 # ChartCore
 
+2026-11-10 用户定（波长与抽稀）：`ChartThinning::thinUniform` 改收 `LinearArray<T>`，个数取数组长度；径向风图常驻门格轴 `LinearArray<char>(0.5, 1, 门数)`（元素不用），风羽直接传风廓线的 `winds`。删除 20 亿隐式点检查（无法再以隐式网格表达），保留 600 组随机对照。
+
 2026-11-10 用户定（线性数组）：径向风图 `Wind2DItem.setData` 接收 Algorithm 的 `LinearArray<double>`（经 `LinearSeriesQml` 登记为 QML 不透明值，页面原样转交），门数、起点或门距与创建配置不符整帧拒收；风羽图历史直接借出 `VerticalWindProfileUnit`，层高度取 `winds.positionAt`，删除中间 `Column` 视图；刻度与悬停就地按 起点 + k·门距。`ChartThinning::thinUniform` 仍收起点、步长与个数，因为它也用于不持有数组的隐式网格（门格、20 亿点检查）。验证：build-current Release 零警告，CTest 3/3（含错网格拒收、QML 转交）。
 
 2026-11-10 用户定：所有采集卡的斜距等间隔，删除 `NonuniformWind2DView`/`NonuniformWind2DItem`、`NonuniformWindBarbItem` 及其 QML 外部类型登记，风羽 `Column` 不再带高度数组。`Wind2DItem`/`Wind2DView` 的创建配置新增必填 `rangeStart`（第 0 门斜距），刻度与悬停按 `RangeGate::rangeOf(k, rangeStart, gateSpacing)`；`DAQChartSpecification::make` 同步增加 `rangeStart`。`nonuniform` 专项改为 `wind`（均匀剖面、风羽、QML 装配与类型警告检查）。下文非均匀相关条目只作追溯。验证：build-current（相邻 Algorithm/UICore 源码覆盖）Release 零警告、CTest 3/3；缺少 `rangeStart` 的配置会被拒绝（smoke 先失败、补上后通过）。

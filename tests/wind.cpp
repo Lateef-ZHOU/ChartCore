@@ -85,16 +85,13 @@ static void thinning()
                 reference.push_back(indices.front());
                 if (perBin == 2 && indices.back() != indices.front()) reference.push_back(indices.back());
             }
-            ChartThinning::thinUniform(start, step, count, lo, hi, width, perBin, uniform);
+            ChartThinning::thinUniform(LinearArray<double>(start, step, positions), lo, hi, width, perBin, uniform);
             ChartThinning::thinIrregular(positions, lo, hi, width, perBin, irregular);
             check(uniform == reference, "uniform direct indices match physical buckets including negative/fractional edges");
             check(irregular == reference, "position-only irregular selection matches physical buckets");
         }
     }
     std::vector<int> picks;
-    ChartThinning::thinUniform(0, 0.001, 2000000000, 100, 110, 0.125, 2, picks);
-    check(picks.size() < 180 && picks.front() == 0 && picks.back() == 1999999999,
-          "two billion implicit samples select only visible buckets and boundary neighbours");
     const double nan = std::numeric_limits<double>::quiet_NaN();
     const std::vector<double> positions{0, 0.1, nan, nan, 0.2, 0.3, 100};
     ChartThinning::thinIrregular(positions, 0, 101, 1, 2, picks);
