@@ -16,138 +16,14 @@
 #include <QWheelEvent>
 #include <rhi/qrhi.h>
 #include <array>
+#include <functional>
 #include <memory>
 #include <limits>
 
 namespace SurfaceRenderDetail {
 // 固定超采样策略：同时过滤曲面轮廓与片元网线，不提供运行时模式选择。
 inline constexpr int kSupersampleScale = 2;
-}
 
-// 专用高度面：接收二维线性数组（带斜距与频率两条轴）和 Z 范围，按固定行列补零、钳值并生成显示快照。
-// 相机、坐标与 GPU 资源属于显示层；窗口是否可见由 QML 控制层决定，不在此监听业务源。
-class SurfaceItem : public QQuickRhiItem
-{
-    Q_OBJECT
-    QML_ELEMENT
-    Q_PROPERTY(QVariantMap configuration READ configuration WRITE setConfiguration REQUIRED)
-public:
-    explicit SurfaceItem(QQuickItem *parent = nullptr)
-        : QQuickRhiItem(parent), axisItem_(new SurfaceAxesItem(this))
-    {
-        connect(this, &QQuickItem::widthChanged, this, &SurfaceItem::syncAxes);
-        connect(this, &QQuickItem::heightChanged, this, &SurfaceItem::syncAxes);
-        setAcceptedMouseButtons(Qt::LeftButton);
-        setSmooth(true); // Qt 合成时线性缩小超采样纹理。
-        syncTargetSize();
-        connect(this, &QQuickItem::paletteChanged, this, &SurfaceItem::syncPalette);
-        syncPalette();
-    }
-    // 创建期配置：QML 必填，组件完成后固定。
-    QVariantMap configuration() const
-    {
-        return {{"rows", axes_.rows}, {"columns", axes_.columns}, {"rowStart", axes_.rowStart}, {"rowStep", axes_.rowStep},
-                {"columnStart", axes_.columnStart}, {"columnStep", axes_.columnStep}};
-    }
-    void setConfiguration(const QVariantMap &value)
-    {
-        if (isComponentComplete())
-        {
-            qmlWarning(this) << "Chart configuration is creation-only.";
-            return;
-        }
-        const SurfaceGrid grid{value.value("rows").toInt(), value.value("columns").toInt()};
-        // 首帧前的初始轴：行 = 斜距、列 = 频率；之后每帧按数据自带的轴更新刻度。
-        const LinearArray2D<double> axes(grid.rows, grid.columns, value.value("rowStart").toDouble(),
-                                         value.value("rowStep").toDouble(), value.value("columnStart").toDouble(),
-                                         value.value("columnStep").toDouble());
-        if (grid.rows < 2 || grid.columns < 2 || qint64(grid.rows) * grid.columns > std::numeric_limits<int>::max() / 6
-            || !value.value("rowStart").isValid() || !value.value("columnStart").isValid() || !axes.hasValidAxes())
-            qFatal("Invalid surface grid.");
-        grid_ = grid;
-        axes_ = axes;
-    }
-
-    // 首帧前的空帧：只带配置的网格，显示时补零。
-    Q_INVOKABLE LinearArray2D<double> blankFrame() const { return axes_; }
-    Q_INVOKABLE bool setData(const LinearArray2D<double> &values, double low, double high)
-    {
-        auto next = prepareSurface(values, grid_, low, high);
-        if (!next) return false; // 非有限值不进入 GPU，也不破坏上次有效显示。
-        next->revision = surface_.revision + 1;
-        surface_ = std::move(*next);
-        syncAxes();
-        update();
-        return true;
-    }
-    const PreparedSurface &surface() const { return surface_; }
-    const SurfaceCamera &camera() const { return camera_; }
-    QColor background() const { return background_; }
-    QColor foreground() const { return foreground_; }
-    std::shared_ptr<SurfaceRenderStats> stats() const { return stats_; }
-    Q_INVOKABLE void resetCamera() { camera_ = {}; updateView(); }
-
-protected:
-    QQuickRhiItemRenderer *createRenderer() override;
-    void geometryChange(const QRectF &geometry, const QRectF &oldGeometry) override
-    {
-        QQuickRhiItem::geometryChange(geometry, oldGeometry);
-        if (geometry.size() != oldGeometry.size())
-            syncTargetSize();
-    }
-    void itemChange(ItemChange change, const ItemChangeData &data) override
-    {
-        QQuickRhiItem::itemChange(change, data);
-        if (change == ItemSceneChange || change == ItemDevicePixelRatioHasChanged)
-            syncTargetSize();
-    }
-    void mousePressEvent(QMouseEvent *event) override { lastMouse_ = event->position(); event->accept(); }
-    void mouseMoveEvent(QMouseEvent *event) override
-    {
-        if (!(event->buttons() & Qt::LeftButton))
-            return;
-        const QPointF delta = event->position() - lastMouse_;
-        lastMouse_ = event->position();
-        camera_.rotate(static_cast<float>(delta.x()), static_cast<float>(delta.y()));
-        updateView();
-        event->accept();
-    }
-    void mouseReleaseEvent(QMouseEvent *event) override { event->accept(); }
-    void wheelEvent(QWheelEvent *event) override
-    {
-        camera_.scale(static_cast<float>(event->angleDelta().y()) / 120.0f);
-        updateView();
-        event->accept();
-    }
-
-private:
-    void syncAxes() { axisItem_->setView(camera_, surface_, size()); }
-    void updateView() { syncAxes(); update(); }
-    void syncTargetSize()
-    {
-        // 固定缓冲尺寸使用物理像素；尺寸、宿主窗口或屏幕 DPR 改变时由 Qt 通知重算。
-        const qreal dpr = window() ? window()->effectiveDevicePixelRatio() : 1;
-        setFixedColorBufferWidth(SurfaceRenderDetail::kSupersampleScale * std::max(1, qRound(width() * dpr)));
-        setFixedColorBufferHeight(SurfaceRenderDetail::kSupersampleScale * std::max(1, qRound(height() * dpr)));
-    }
-    void syncPalette()
-    {
-        auto *palette = qvariant_cast<QObject *>(property("palette"));
-        background_ = palette->property("base").value<QColor>();
-        foreground_ = palette->property("text").value<QColor>();
-        update();
-    }
-    SurfaceGrid grid_{2, 2};
-    LinearArray2D<double> axes_; // 配置给出的初始网格（不带元素）
-    SurfaceAxesItem *const axisItem_;
-    PreparedSurface surface_;
-    SurfaceCamera camera_;
-    QColor background_, foreground_;
-    QPointF lastMouse_;
-    const std::shared_ptr<SurfaceRenderStats> stats_ = std::make_shared<SurfaceRenderStats>();
-};
-
-namespace SurfaceRenderDetail {
 inline QShader loadShader(const QString &path)
 {
     QFile file(path);
@@ -159,10 +35,20 @@ inline QShader loadShader(const QString &path)
     return shader;
 }
 
+// 渲染线程同步时从所属曲面取的一份显示快照（GUI 线程此刻阻塞，回调可直接读曲面状态）。
+struct SurfaceFrame
+{
+    PreparedSurface surface;
+    SurfaceCamera camera;
+    QColor background, foreground;
+    QSizeF outputSize; // 设备像素
+};
+
 class SurfaceRenderer final : public QQuickRhiItemRenderer
 {
 public:
-    explicit SurfaceRenderer(std::shared_ptr<SurfaceRenderStats> stats) : stats_(std::move(stats))
+    SurfaceRenderer(std::shared_ptr<SurfaceRenderStats> stats, std::function<SurfaceFrame()> snapshot)
+        : stats_(std::move(stats)), snapshot_(std::move(snapshot))
     { ++stats_->created; }
     ~SurfaceRenderer() override { ++stats_->destroyed; }
 
@@ -221,15 +107,15 @@ protected:
         }
     }
 
-    void synchronize(QQuickRhiItem *item) override
+    void synchronize(QQuickRhiItem *) override
     {
         const qint64 start = stats_->measuring.load() ? surfaceNowNs() : 0;
-        const auto *surfaceItem = static_cast<SurfaceItem *>(item);
-        surface_ = surfaceItem->surface();
-        camera_ = surfaceItem->camera();
-        background_ = surfaceItem->background();
-        foreground_ = surfaceItem->foreground();
-        outputSize_ = surfaceItem->size() * surfaceItem->window()->effectiveDevicePixelRatio();
+        auto frame = snapshot_();
+        surface_ = std::move(frame.surface);
+        camera_ = frame.camera;
+        background_ = frame.background;
+        foreground_ = frame.foreground;
+        outputSize_ = frame.outputSize;
         syncNs_ = start ? surfaceNowNs() - start : 0;
     }
 
@@ -333,9 +219,137 @@ private:
     SurfaceCamera camera_;
     QColor background_, foreground_;
     QSizeF outputSize_;
+    const std::function<SurfaceFrame()> snapshot_;
     quint64 uploaded_ = 0;
     int samples_ = 0;
 };
 }
 
-inline QQuickRhiItemRenderer *SurfaceItem::createRenderer() { return new SurfaceRenderDetail::SurfaceRenderer(stats_); }
+// 专用高度面：接收二维线性数组（带斜距与频率两条轴）和 Z 范围，按固定行列补零、钳值并生成显示快照。
+// 相机、坐标与 GPU 资源属于显示层；窗口是否可见由 QML 控制层决定，不在此监听业务源。
+class SurfaceItem : public QQuickRhiItem
+{
+    Q_OBJECT
+    QML_ELEMENT
+    Q_PROPERTY(QVariantMap configuration READ configuration WRITE setConfiguration REQUIRED)
+public:
+    explicit SurfaceItem(QQuickItem *parent = nullptr)
+        : QQuickRhiItem(parent), axisItem_(new SurfaceAxesItem(this))
+    {
+        connect(this, &QQuickItem::widthChanged, this, &SurfaceItem::syncAxes);
+        connect(this, &QQuickItem::heightChanged, this, &SurfaceItem::syncAxes);
+        setAcceptedMouseButtons(Qt::LeftButton);
+        setSmooth(true); // Qt 合成时线性缩小超采样纹理。
+        syncTargetSize();
+        connect(this, &QQuickItem::paletteChanged, this, &SurfaceItem::syncPalette);
+        syncPalette();
+    }
+    // 创建期配置：QML 必填，组件完成后固定。
+    QVariantMap configuration() const
+    {
+        return {{"rows", axes_.rows}, {"columns", axes_.columns}, {"rowStart", axes_.rowStart}, {"rowStep", axes_.rowStep},
+                {"columnStart", axes_.columnStart}, {"columnStep", axes_.columnStep}};
+    }
+    void setConfiguration(const QVariantMap &value)
+    {
+        if (isComponentComplete())
+        {
+            qmlWarning(this) << "Chart configuration is creation-only.";
+            return;
+        }
+        const SurfaceGrid grid{value.value("rows").toInt(), value.value("columns").toInt()};
+        // 首帧前的初始轴：行 = 斜距、列 = 频率；之后每帧按数据自带的轴更新刻度。
+        const LinearArray2D<double> axes(grid.rows, grid.columns, value.value("rowStart").toDouble(),
+                                         value.value("rowStep").toDouble(), value.value("columnStart").toDouble(),
+                                         value.value("columnStep").toDouble());
+        if (grid.rows < 2 || grid.columns < 2 || qint64(grid.rows) * grid.columns > std::numeric_limits<int>::max() / 6
+            || !value.value("rowStart").isValid() || !value.value("columnStart").isValid() || !axes.hasValidAxes())
+            qFatal("Invalid surface grid.");
+        grid_ = grid;
+        axes_ = axes;
+    }
+
+    // 首帧前的空帧：只带配置的网格，显示时补零。
+    Q_INVOKABLE LinearArray2D<double> blankFrame() const { return axes_; }
+    Q_INVOKABLE bool setData(const LinearArray2D<double> &values, double low, double high)
+    {
+        auto next = prepareSurface(values, grid_, low, high);
+        if (!next) return false; // 非有限值不进入 GPU，也不破坏上次有效显示。
+        next->revision = surface_.revision + 1;
+        surface_ = std::move(*next);
+        syncAxes();
+        update();
+        return true;
+    }
+    const PreparedSurface &surface() const { return surface_; }
+    const SurfaceCamera &camera() const { return camera_; }
+    QColor background() const { return background_; }
+    QColor foreground() const { return foreground_; }
+    std::shared_ptr<SurfaceRenderStats> stats() const { return stats_; }
+    Q_INVOKABLE void resetCamera() { camera_ = {}; updateView(); }
+
+protected:
+    QQuickRhiItemRenderer *createRenderer() override
+    {
+        return new SurfaceRenderDetail::SurfaceRenderer(stats_, [this] {
+            return SurfaceRenderDetail::SurfaceFrame{surface_, camera_, background_, foreground_,
+                                                     size() * window()->effectiveDevicePixelRatio()};
+        });
+    }
+    void geometryChange(const QRectF &geometry, const QRectF &oldGeometry) override
+    {
+        QQuickRhiItem::geometryChange(geometry, oldGeometry);
+        if (geometry.size() != oldGeometry.size())
+            syncTargetSize();
+    }
+    void itemChange(ItemChange change, const ItemChangeData &data) override
+    {
+        QQuickRhiItem::itemChange(change, data);
+        if (change == ItemSceneChange || change == ItemDevicePixelRatioHasChanged)
+            syncTargetSize();
+    }
+    void mousePressEvent(QMouseEvent *event) override { lastMouse_ = event->position(); event->accept(); }
+    void mouseMoveEvent(QMouseEvent *event) override
+    {
+        if (!(event->buttons() & Qt::LeftButton))
+            return;
+        const QPointF delta = event->position() - lastMouse_;
+        lastMouse_ = event->position();
+        camera_.rotate(static_cast<float>(delta.x()), static_cast<float>(delta.y()));
+        updateView();
+        event->accept();
+    }
+    void mouseReleaseEvent(QMouseEvent *event) override { event->accept(); }
+    void wheelEvent(QWheelEvent *event) override
+    {
+        camera_.scale(static_cast<float>(event->angleDelta().y()) / 120.0f);
+        updateView();
+        event->accept();
+    }
+
+private:
+    void syncAxes() { axisItem_->setView(camera_, surface_, size()); }
+    void updateView() { syncAxes(); update(); }
+    void syncTargetSize()
+    {
+        // 固定缓冲尺寸使用物理像素；尺寸、宿主窗口或屏幕 DPR 改变时由 Qt 通知重算。
+        const qreal dpr = window() ? window()->effectiveDevicePixelRatio() : 1;
+        setFixedColorBufferWidth(SurfaceRenderDetail::kSupersampleScale * std::max(1, qRound(width() * dpr)));
+        setFixedColorBufferHeight(SurfaceRenderDetail::kSupersampleScale * std::max(1, qRound(height() * dpr)));
+    }
+    void syncPalette()
+    {
+        auto *palette = qvariant_cast<QObject *>(property("palette"));
+        background_ = palette->property("base").value<QColor>();
+        foreground_ = palette->property("text").value<QColor>();
+        update();
+    }
+    SurfaceGrid grid_{2, 2};
+    LinearArray2D<double> axes_; // 配置给出的初始网格（不带元素）
+    SurfaceAxesItem *const axisItem_;
+    PreparedSurface surface_;
+    SurfaceCamera camera_;
+    QColor background_, foreground_;
+    QPointF lastMouse_;
+    const std::shared_ptr<SurfaceRenderStats> stats_ = std::make_shared<SurfaceRenderStats>();
+};

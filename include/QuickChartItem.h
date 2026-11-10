@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include <QSignalBlocker>
 #include <QtQml/qqmlregistration.h>
 #include <algorithm>
@@ -218,21 +219,26 @@ struct AxisText
     QString text;
 };
 
-class QuickChartItem;
-
 // ------------------------------------------------------------
-// ChartLabelLayer —— 文字层：铺在几何层之上，只画字
+// ChartLabelLayer —— 文字层：铺在几何层之上，只画字；画什么由父图表交入的回调决定
 // ------------------------------------------------------------
 class ChartLabelLayer final : public QQuickPaintedItem
 {
     Q_OBJECT
 public:
-    explicit ChartLabelLayer(QuickChartItem *owner);
+    // 父图表是本层的父 item（寿命长于本层），回调只在本层存活期间被 Qt 调用。
+    ChartLabelLayer(QQuickItem *parent, std::function<void(QPainter *)> paint)
+        : QQuickPaintedItem(parent), paint_(std::move(paint))
+    {
+        setAcceptedMouseButtons(Qt::NoButton); // 只显示，不吃事件——悬停归几何层
+        setAntialiasing(true);
+        setZ(1.0);
+    }
 
-    void paint(QPainter *painter) override;
+    void paint(QPainter *painter) override { paint_(painter); }
 
 private:
-    QuickChartItem *owner_; // 父图表（本层是它的子 item，寿命短于它）
+    const std::function<void(QPainter *)> paint_;
 };
 
 // ------------------------------------------------------------
@@ -257,7 +263,7 @@ public:
         setFlag(ItemHasContents, true);
         setAcceptHoverEvents(true);
         setAcceptedMouseButtons(Qt::LeftButton); // 双击复位要它；滚轮的投递也走这道闸
-        labels_ = new ChartLabelLayer(this);
+        labels_ = new ChartLabelLayer(this, [this](QPainter *painter) { paintLabels(painter); });
         connect(this, &QQuickItem::paletteChanged, this, &QuickChartItem::syncPalette); // 主题变了跟着变
         syncPalette(); // 立起调色板：此后换父项 / 进窗口的重继承归 Qt（它在首次建调色板时接了 parentChanged / windowChanged）
         // 过渡动画：Qt Quick 的动画驱动器按渲染节拍推进，本类不自管定时器。曲线与时长在此定一次；
@@ -324,11 +330,12 @@ private:
         showView(tx, ty); // 跟随态下钳位会把两轴贴到界上
     }
 
-public:
+protected:
     // 子类往文字层补自己的字（图例之类）。plot = 绘图区。与几何层的 drawMarks 对称：
-    // 一个吐顶点、一个吐字。**公开是因为调用者 ChartLabelLayer 是另一个对象**——protected 够不着，
-    // 而本仓库不开 friend。
+    // 一个吐顶点、一个吐字；由本类的 paintLabels 调用。
     virtual void paintMarkLabels(QPainter *, const QRectF &) const {}
+
+public:
 
     // ── 文字层要读的只读口 ──
     [[nodiscard]] const ChartAxis &xAxis() const { return xAxis_; }
@@ -869,7 +876,104 @@ protected:
         reconcile(); // 它自己会 refresh
     }
 
-    QSGNode *updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *) override;
+    // 节点结构（固定顺序，按下标取）：0 = 网格，1 = 边框，2 = 裁剪节点（其下：子类的图元 + 悬停线）
+    QSGNode *updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *) override
+    {
+        const QRectF r = plotRect();
+        QSGNode *root = oldNode;
+        if (!root)
+            root = new QSGNode;
+        if (r.isEmpty())
+            return root;
+
+        // ── 网格：刻度位置的细线 ──
+        // 位置向子类要（见 ticksX / ticksY）；这里只用位置，文字归文字层。
+        const QList<AxisText> xMarks = xTicks();
+        const QList<AxisText> yMarks = yTicks();
+        {
+            auto *node = lineNode(root, 0, grid_, static_cast<int>(xMarks.size() + yMarks.size()) * 2,
+                                  QSGGeometry::DrawLines);
+            QSGGeometry::Point2D *v = node->geometry()->vertexDataAsPoint2D();
+            int n = 0;
+            for (const AxisText &t : xMarks)
+            {
+                const auto x = static_cast<float>(xAxis_.toPixel(t.at, r.left(), r.right()));
+                v[n++].set(x, static_cast<float>(r.top()));
+                v[n++].set(x, static_cast<float>(r.bottom()));
+            }
+            for (const AxisText &t : yMarks)
+            {
+                const auto y = static_cast<float>(yAxis_.toPixel(t.at, r.bottom(), r.top()));
+                v[n++].set(static_cast<float>(r.left()), y);
+                v[n++].set(static_cast<float>(r.right()), y);
+            }
+            node->markDirty(QSGNode::DirtyGeometry);
+        }
+
+        // ── 边框：四边 ──
+        {
+            auto *node = lineNode(root, 1, fg_, 8, QSGGeometry::DrawLines);
+            QSGGeometry::Point2D *v = node->geometry()->vertexDataAsPoint2D();
+            const auto l = static_cast<float>(r.left());
+            const auto t = static_cast<float>(r.top());
+            const auto rr = static_cast<float>(r.right());
+            const auto b = static_cast<float>(r.bottom());
+            v[0].set(l, t);
+            v[1].set(rr, t);
+            v[2].set(rr, t);
+            v[3].set(rr, b);
+            v[4].set(rr, b);
+            v[5].set(l, b);
+            v[6].set(l, b);
+            v[7].set(l, t);
+            node->markDirty(QSGNode::DirtyGeometry);
+        }
+
+        // ── 裁剪节点：子类的图元与悬停线都关在绘图区内 ──
+        // 裁剪节点自己也要有几何（只设 setClipRect 不给几何是不够的）。
+        while (root->childCount() <= 2)
+        {
+            auto *fresh = new QSGClipNode;
+            fresh->setGeometry(new QSGGeometry(QSGGeometry::defaultAttributes_Point2D(), 4));
+            fresh->setFlag(QSGNode::OwnsGeometry);
+            fresh->setIsRectangular(true);
+            root->appendChildNode(fresh);
+        }
+        auto *clip = static_cast<QSGClipNode *>(root->childAtIndex(2));
+        QSGGeometry::updateRectGeometry(clip->geometry(), r);
+        clip->setClipRect(r);
+        clip->markDirty(QSGNode::DirtyGeometry);
+
+        // ── 子类的图元：**基类不知道那是折线还是风羽**，只给一块裁剪区和一个起始下标 ──
+        const int marks = drawMarks(clip, 0, r);
+
+        // ── 悬停线：排在图元**之后** ⇒ 画在图元之上。它是交互反馈，不该被内容盖住 ──
+        {
+            auto *node = lineNode(clip, marks, fg_, hover_ ? 2 : 0, QSGGeometry::DrawLines);
+            if (hover_)
+            {
+                QSGGeometry::Point2D *v = node->geometry()->vertexDataAsPoint2D();
+                if (hoverOnY_) // 吸附在纵轴上 → 画一条横线
+                {
+                    const auto y = static_cast<float>(yAxis_.toPixel(hover_->at, r.bottom(), r.top()));
+                    v[0].set(static_cast<float>(r.left()), y);
+                    v[1].set(static_cast<float>(r.right()), y);
+                }
+                else
+                {
+                    const auto x = static_cast<float>(xAxis_.toPixel(hover_->at, r.left(), r.right()));
+                    v[0].set(x, static_cast<float>(r.top()));
+                    v[1].set(x, static_cast<float>(r.bottom()));
+                }
+            }
+            node->markDirty(QSGNode::DirtyGeometry);
+        }
+        // 上一帧可能留下更多节点（图元变少），多余的收成空
+        for (int i = marks + 1; i < clip->childCount(); ++i)
+            lineNode(clip, i, fg_, 0, QSGGeometry::DrawLines);
+
+        return root;
+    }
 
     // ── 给子类画图元用的两个原语 ──
     // 无状态的静态工具，不是可变点，drawMarks 的实现者非用不可。
@@ -877,10 +981,75 @@ protected:
     // 取（必要时新建）parent 下第 index 个几何节点，并设好颜色与顶点数。
     // **按下标取而不是记成员指针**：场景图随时可能销毁整棵节点树，记指针就要处理悬空。
     static QSGGeometryNode *lineNode(QSGNode *parent, int index, const QColor &color, int vertexCount,
-                                     QSGGeometry::DrawingMode mode);
+                                     QSGGeometry::DrawingMode mode)
+    {
+        while (parent->childCount() <= index)
+        {
+            auto *fresh = new QSGGeometryNode;
+            auto *geometry = new QSGGeometry(QSGGeometry::defaultAttributes_Point2D(), 0);
+            fresh->setGeometry(geometry);
+            fresh->setFlag(QSGNode::OwnsGeometry);
+            fresh->setMaterial(new QSGFlatColorMaterial);
+            fresh->setFlag(QSGNode::OwnsMaterial);
+            parent->appendChildNode(fresh);
+        }
+        auto *node = static_cast<QSGGeometryNode *>(parent->childAtIndex(index));
+        auto *material = static_cast<QSGFlatColorMaterial *>(node->material());
+        if (material->color() != color)
+        {
+            material->setColor(color);
+            node->markDirty(QSGNode::DirtyMaterial);
+        }
+        // **绝不让一个节点的顶点数为 0**（整条路上最坑的一步）：批渲染器把"出生时 0 顶点"的节点当成
+        // 空的记下了，此后 allocate 再多顶点、再 markDirty 也不画。现象极具迷惑性——网格与边框（出生
+        // 就有顶点）一切正常，曲线（头几帧还没数据）永远不出现，而调试打印里顶点数、坐标、颜色全是对的。
+        // 修法只能是"别变空"：要 0 个顶点时摆两个重合顶点到画布外（零长度线，画不出东西）。
+        // **不要改成"换一块新几何再 delete 旧的"**——渲染器本帧还引着旧几何，当场堆损坏。
+        const bool empty = vertexCount <= 0;
+        const int count = empty ? 2 : vertexCount;
+        QSGGeometry *geometry = node->geometry();
+        if (geometry->vertexCount() != count)
+            geometry->allocate(count);
+        geometry->setDrawingMode(empty ? QSGGeometry::DrawLines : mode);
+        if (empty)
+        {
+            QSGGeometry::Point2D *v = geometry->vertexDataAsPoint2D();
+            v[0].set(-1.0f, -1.0f);
+            v[1].set(-1.0f, -1.0f);
+        }
+        return node;
+    }
 
     // 写一段粗线（两个三角形）。**恒返 6**——退化段写六个重合顶点，理由见实现处那段注。
-    static int writeSegment(QSGGeometry::Point2D *v, const QPointF &a, const QPointF &b, float half);
+    static int writeSegment(QSGGeometry::Point2D *v, const QPointF &a, const QPointF &b, float half)
+    {
+        const auto ax = static_cast<float>(a.x());
+        const auto ay = static_cast<float>(a.y());
+        const auto bx = static_cast<float>(b.x());
+        const auto by = static_cast<float>(b.y());
+        const float dx = bx - ax;
+        const float dy = by - ay;
+        const float len = std::hypot(dx, dy);
+        // **退化段也要占满六个顶点**：若返 0，调用方就得写完再 `allocate(实际数)` 收口——而
+        // `QSGGeometry::allocate` 会**丢弃**已有数据，那一收等于把整条曲线刚写好的顶点全抹成未初始化
+        // 内存，画出来是满屏乱三角形、且每帧不同。两个采样落在同一个像素上就足以造出一个退化段。
+        // 所以顶点数**恒等于预估数**：退化段写六个重合顶点（零面积，画不出东西）。
+        if (len < 1e-6f)
+        {
+            for (int i = 0; i < 6; ++i)
+                v[i].set(ax, ay);
+            return 6;
+        }
+        const float nx = -dy / len * half;
+        const float ny = dx / len * half;
+        v[0].set(ax + nx, ay + ny);
+        v[1].set(ax - nx, ay - ny);
+        v[2].set(bx + nx, by + ny);
+        v[3].set(bx + nx, by + ny);
+        v[4].set(ax - nx, ay - ny);
+        v[5].set(bx - nx, by - ny);
+        return 6;
+    }
 
 private:
     // [主] 颜色全从本 item 自己的调色板解析：底色 Base、前景 WindowText，网格 = 两者按 0.72 / 0.28 调出的一档灰
@@ -928,6 +1097,71 @@ private:
     // 过渡中它就是"当前视口"，下一次缩放从它起算（targetX / targetY）。
     static constexpr int kAnimMs = 160;
     QVariantAnimation glide_;
+    // 文字层回调：刻度文字 / 轴标题 / 图例 / 悬停读数。
+    void paintLabels(QPainter *painter) const
+    {
+        const QRectF r = plotRect();
+        if (r.isEmpty())
+            return;
+        painter->setRenderHint(QPainter::TextAntialiasing, true);
+        const QColor fg = foreground();
+        painter->setPen(fg);
+        QFont font = painter->font();
+        font.setPointSizeF(9.0);
+        painter->setFont(font);
+        const QFontMetricsF metrics(font);
+
+        // 纵轴刻度（默认右对齐贴着绘图区左沿；靠右摆时改成左对齐贴着右沿）
+        const bool yRight = yOnRight();
+        for (const AxisText &t : yTicks())
+        {
+            const double y = yAxis().toPixel(t.at, r.bottom(), r.top());
+            const QRectF box = yRight ? QRectF(r.right() + 6.0, y - 8.0, width() - r.right() - 6.0, 16.0)
+                                      : QRectF(0.0, y - 8.0, r.left() - 6.0, 16.0);
+            painter->drawText(box, (yRight ? Qt::AlignLeft : Qt::AlignRight) | Qt::AlignVCenter, t.text);
+        }
+        // 横轴刻度（居中挂在绘图区下沿）。两端那个往里收，免得被控件边界切半或跟邻座的图挤在一起。
+        for (const AxisText &t : xTicks())
+        {
+            const double x = xAxis().toPixel(t.at, r.left(), r.right());
+            QRectF box(x - 40.0, r.bottom() + 4.0, 80.0, 16.0);
+            if (box.left() < 0.0)
+                box.moveLeft(0.0);
+            if (box.right() > width())
+                box.moveRight(width());
+            painter->drawText(box, Qt::AlignHCenter | Qt::AlignTop, t.text);
+        }
+        // 轴标题
+        if (!xAxis().title.isEmpty())
+            painter->drawText(QRectF(r.left(), r.bottom() + 22.0, r.width(), 18.0), Qt::AlignHCenter | Qt::AlignTop,
+                              xAxis().title);
+        if (!yAxis().title.isEmpty())
+        {
+            painter->save();
+            painter->translate(yRight ? width() - 14.0 : 14.0, r.center().y());
+            painter->rotate(-90.0);
+            painter->drawText(QRectF(-r.height() / 2.0, -9.0, r.height(), 18.0), Qt::AlignCenter, yAxis().title);
+            painter->restore();
+        }
+
+        // 子类的字（图例之类）。**基类不知道有"图例"这回事**——图例是折线族的东西，
+        // 住 SeriesChart。这一口与几何层的 drawMarks 对称：一个吐顶点、一个吐字。
+        paintMarkLabels(painter, r);
+
+        // 悬停读数（绘图区左上角）
+        if (const auto &probe = hover())
+        {
+            const QStringList lines = probe->text.split(QLatin1Char('\n'));
+            double textWidth = 0.0;
+            for (const QString &line : lines)
+                textWidth = std::max(textWidth, metrics.horizontalAdvance(line));
+            const QRectF box(r.left() + 6.0, r.top() + 6.0, textWidth + 12.0, lines.size() * 15.0 + 8.0);
+            const QColor ink = foreground(); // 反色底：前景色当底、底色当字，两种主题下都读得清
+            painter->fillRect(box, QColor(ink.red(), ink.green(), ink.blue(), 220));
+            painter->setPen(background());
+            painter->drawText(box.adjusted(6.0, 4.0, -6.0, -4.0), Qt::AlignLeft | Qt::AlignTop, probe->text);
+        }
+    }
     ChartLabelLayer *labels_ = nullptr; // 子 item，Qt 对象树接管
 };
 
@@ -935,246 +1169,3 @@ private:
 // inline 实现
 // ============================================================
 
-inline QSGGeometryNode *QuickChartItem::lineNode(QSGNode *parent, const int index, const QColor &color,
-                                                 const int vertexCount, const QSGGeometry::DrawingMode mode)
-{
-    while (parent->childCount() <= index)
-    {
-        auto *fresh = new QSGGeometryNode;
-        auto *geometry = new QSGGeometry(QSGGeometry::defaultAttributes_Point2D(), 0);
-        fresh->setGeometry(geometry);
-        fresh->setFlag(QSGNode::OwnsGeometry);
-        fresh->setMaterial(new QSGFlatColorMaterial);
-        fresh->setFlag(QSGNode::OwnsMaterial);
-        parent->appendChildNode(fresh);
-    }
-    auto *node = static_cast<QSGGeometryNode *>(parent->childAtIndex(index));
-    auto *material = static_cast<QSGFlatColorMaterial *>(node->material());
-    if (material->color() != color)
-    {
-        material->setColor(color);
-        node->markDirty(QSGNode::DirtyMaterial);
-    }
-    // **绝不让一个节点的顶点数为 0**（整条路上最坑的一步）：批渲染器把"出生时 0 顶点"的节点当成
-    // 空的记下了，此后 allocate 再多顶点、再 markDirty 也不画。现象极具迷惑性——网格与边框（出生
-    // 就有顶点）一切正常，曲线（头几帧还没数据）永远不出现，而调试打印里顶点数、坐标、颜色全是对的。
-    // 修法只能是"别变空"：要 0 个顶点时摆两个重合顶点到画布外（零长度线，画不出东西）。
-    // **不要改成"换一块新几何再 delete 旧的"**——渲染器本帧还引着旧几何，当场堆损坏。
-    const bool empty = vertexCount <= 0;
-    const int count = empty ? 2 : vertexCount;
-    QSGGeometry *geometry = node->geometry();
-    if (geometry->vertexCount() != count)
-        geometry->allocate(count);
-    geometry->setDrawingMode(empty ? QSGGeometry::DrawLines : mode);
-    if (empty)
-    {
-        QSGGeometry::Point2D *v = geometry->vertexDataAsPoint2D();
-        v[0].set(-1.0f, -1.0f);
-        v[1].set(-1.0f, -1.0f);
-    }
-    return node;
-}
-
-inline int QuickChartItem::writeSegment(QSGGeometry::Point2D *v, const QPointF &a, const QPointF &b, const float half)
-{
-    const auto ax = static_cast<float>(a.x());
-    const auto ay = static_cast<float>(a.y());
-    const auto bx = static_cast<float>(b.x());
-    const auto by = static_cast<float>(b.y());
-    const float dx = bx - ax;
-    const float dy = by - ay;
-    const float len = std::hypot(dx, dy);
-    // **退化段也要占满六个顶点**：若返 0，调用方就得写完再 `allocate(实际数)` 收口——而
-    // `QSGGeometry::allocate` 会**丢弃**已有数据，那一收等于把整条曲线刚写好的顶点全抹成未初始化
-    // 内存，画出来是满屏乱三角形、且每帧不同。两个采样落在同一个像素上就足以造出一个退化段。
-    // 所以顶点数**恒等于预估数**：退化段写六个重合顶点（零面积，画不出东西）。
-    if (len < 1e-6f)
-    {
-        for (int i = 0; i < 6; ++i)
-            v[i].set(ax, ay);
-        return 6;
-    }
-    const float nx = -dy / len * half;
-    const float ny = dx / len * half;
-    v[0].set(ax + nx, ay + ny);
-    v[1].set(ax - nx, ay - ny);
-    v[2].set(bx + nx, by + ny);
-    v[3].set(bx + nx, by + ny);
-    v[4].set(ax - nx, ay - ny);
-    v[5].set(bx - nx, by - ny);
-    return 6;
-}
-
-// 节点结构（固定顺序，按下标取）：0 = 网格，1 = 边框，2 = 裁剪节点（其下：子类的图元 + 悬停线）
-inline QSGNode *QuickChartItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
-{
-    const QRectF r = plotRect();
-    QSGNode *root = oldNode;
-    if (!root)
-        root = new QSGNode;
-    if (r.isEmpty())
-        return root;
-
-    // ── 网格：刻度位置的细线 ──
-    // 位置向子类要（见 ticksX / ticksY）；这里只用位置，文字归文字层。
-    const QList<AxisText> xMarks = xTicks();
-    const QList<AxisText> yMarks = yTicks();
-    {
-        auto *node = lineNode(root, 0, grid_, static_cast<int>(xMarks.size() + yMarks.size()) * 2,
-                              QSGGeometry::DrawLines);
-        QSGGeometry::Point2D *v = node->geometry()->vertexDataAsPoint2D();
-        int n = 0;
-        for (const AxisText &t : xMarks)
-        {
-            const auto x = static_cast<float>(xAxis_.toPixel(t.at, r.left(), r.right()));
-            v[n++].set(x, static_cast<float>(r.top()));
-            v[n++].set(x, static_cast<float>(r.bottom()));
-        }
-        for (const AxisText &t : yMarks)
-        {
-            const auto y = static_cast<float>(yAxis_.toPixel(t.at, r.bottom(), r.top()));
-            v[n++].set(static_cast<float>(r.left()), y);
-            v[n++].set(static_cast<float>(r.right()), y);
-        }
-        node->markDirty(QSGNode::DirtyGeometry);
-    }
-
-    // ── 边框：四边 ──
-    {
-        auto *node = lineNode(root, 1, fg_, 8, QSGGeometry::DrawLines);
-        QSGGeometry::Point2D *v = node->geometry()->vertexDataAsPoint2D();
-        const auto l = static_cast<float>(r.left());
-        const auto t = static_cast<float>(r.top());
-        const auto rr = static_cast<float>(r.right());
-        const auto b = static_cast<float>(r.bottom());
-        v[0].set(l, t);
-        v[1].set(rr, t);
-        v[2].set(rr, t);
-        v[3].set(rr, b);
-        v[4].set(rr, b);
-        v[5].set(l, b);
-        v[6].set(l, b);
-        v[7].set(l, t);
-        node->markDirty(QSGNode::DirtyGeometry);
-    }
-
-    // ── 裁剪节点：子类的图元与悬停线都关在绘图区内 ──
-    // 裁剪节点自己也要有几何（只设 setClipRect 不给几何是不够的）。
-    while (root->childCount() <= 2)
-    {
-        auto *fresh = new QSGClipNode;
-        fresh->setGeometry(new QSGGeometry(QSGGeometry::defaultAttributes_Point2D(), 4));
-        fresh->setFlag(QSGNode::OwnsGeometry);
-        fresh->setIsRectangular(true);
-        root->appendChildNode(fresh);
-    }
-    auto *clip = static_cast<QSGClipNode *>(root->childAtIndex(2));
-    QSGGeometry::updateRectGeometry(clip->geometry(), r);
-    clip->setClipRect(r);
-    clip->markDirty(QSGNode::DirtyGeometry);
-
-    // ── 子类的图元：**基类不知道那是折线还是风羽**，只给一块裁剪区和一个起始下标 ──
-    const int marks = drawMarks(clip, 0, r);
-
-    // ── 悬停线：排在图元**之后** ⇒ 画在图元之上。它是交互反馈，不该被内容盖住 ──
-    {
-        auto *node = lineNode(clip, marks, fg_, hover_ ? 2 : 0, QSGGeometry::DrawLines);
-        if (hover_)
-        {
-            QSGGeometry::Point2D *v = node->geometry()->vertexDataAsPoint2D();
-            if (hoverOnY_) // 吸附在纵轴上 → 画一条横线
-            {
-                const auto y = static_cast<float>(yAxis_.toPixel(hover_->at, r.bottom(), r.top()));
-                v[0].set(static_cast<float>(r.left()), y);
-                v[1].set(static_cast<float>(r.right()), y);
-            }
-            else
-            {
-                const auto x = static_cast<float>(xAxis_.toPixel(hover_->at, r.left(), r.right()));
-                v[0].set(x, static_cast<float>(r.top()));
-                v[1].set(x, static_cast<float>(r.bottom()));
-            }
-        }
-        node->markDirty(QSGNode::DirtyGeometry);
-    }
-    // 上一帧可能留下更多节点（图元变少），多余的收成空
-    for (int i = marks + 1; i < clip->childCount(); ++i)
-        lineNode(clip, i, fg_, 0, QSGGeometry::DrawLines);
-
-    return root;
-}
-
-// ------------------------------------------------------------
-// ChartLabelLayer —— 刻度文字 / 轴标题 / 图例 / 悬停读数
-// ------------------------------------------------------------
-inline ChartLabelLayer::ChartLabelLayer(QuickChartItem *owner) : QQuickPaintedItem(owner), owner_(owner)
-{
-    setAcceptedMouseButtons(Qt::NoButton); // 只显示，不吃事件——悬停归几何层
-    setAntialiasing(true);
-    setZ(1.0);
-}
-
-inline void ChartLabelLayer::paint(QPainter *painter)
-{
-    const QRectF r = owner_->plotRect();
-    if (r.isEmpty())
-        return;
-    painter->setRenderHint(QPainter::TextAntialiasing, true);
-    const QColor fg = owner_->foreground();
-    painter->setPen(fg);
-    QFont font = painter->font();
-    font.setPointSizeF(9.0);
-    painter->setFont(font);
-    const QFontMetricsF metrics(font);
-
-    // 纵轴刻度（默认右对齐贴着绘图区左沿；靠右摆时改成左对齐贴着右沿）
-    const bool yRight = owner_->yOnRight();
-    for (const AxisText &t : owner_->yTicks())
-    {
-        const double y = owner_->yAxis().toPixel(t.at, r.bottom(), r.top());
-        const QRectF box = yRight ? QRectF(r.right() + 6.0, y - 8.0, width() - r.right() - 6.0, 16.0)
-                                  : QRectF(0.0, y - 8.0, r.left() - 6.0, 16.0);
-        painter->drawText(box, (yRight ? Qt::AlignLeft : Qt::AlignRight) | Qt::AlignVCenter, t.text);
-    }
-    // 横轴刻度（居中挂在绘图区下沿）。两端那个往里收，免得被控件边界切半或跟邻座的图挤在一起。
-    for (const AxisText &t : owner_->xTicks())
-    {
-        const double x = owner_->xAxis().toPixel(t.at, r.left(), r.right());
-        QRectF box(x - 40.0, r.bottom() + 4.0, 80.0, 16.0);
-        if (box.left() < 0.0)
-            box.moveLeft(0.0);
-        if (box.right() > width())
-            box.moveRight(width());
-        painter->drawText(box, Qt::AlignHCenter | Qt::AlignTop, t.text);
-    }
-    // 轴标题
-    if (!owner_->xAxis().title.isEmpty())
-        painter->drawText(QRectF(r.left(), r.bottom() + 22.0, r.width(), 18.0), Qt::AlignHCenter | Qt::AlignTop,
-                          owner_->xAxis().title);
-    if (!owner_->yAxis().title.isEmpty())
-    {
-        painter->save();
-        painter->translate(yRight ? width() - 14.0 : 14.0, r.center().y());
-        painter->rotate(-90.0);
-        painter->drawText(QRectF(-r.height() / 2.0, -9.0, r.height(), 18.0), Qt::AlignCenter, owner_->yAxis().title);
-        painter->restore();
-    }
-
-    // 子类的字（图例之类）。**基类不知道有"图例"这回事**——图例是折线族的东西，
-    // 住 SeriesChart。这一口与几何层的 drawMarks 对称：一个吐顶点、一个吐字。
-    owner_->paintMarkLabels(painter, r);
-
-    // 悬停读数（绘图区左上角）
-    if (const auto &hover = owner_->hover())
-    {
-        const QStringList lines = hover->text.split(QLatin1Char('\n'));
-        double textWidth = 0.0;
-        for (const QString &line : lines)
-            textWidth = std::max(textWidth, metrics.horizontalAdvance(line));
-        const QRectF box(r.left() + 6.0, r.top() + 6.0, textWidth + 12.0, lines.size() * 15.0 + 8.0);
-        const QColor ink = owner_->foreground(); // 反色底：前景色当底、底色当字，两种主题下都读得清
-        painter->fillRect(box, QColor(ink.red(), ink.green(), ink.blue(), 220));
-        painter->setPen(owner_->background());
-        painter->drawText(box.adjusted(6.0, 4.0, -6.0, -4.0), Qt::AlignLeft | Qt::AlignTop, hover->text);
-    }
-}

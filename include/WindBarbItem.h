@@ -126,7 +126,119 @@ protected:
         noteLastX(std::chrono::duration<double>(at.time_since_epoch()).count());
         dataChanged();
     }
-    int drawMarks(QSGNode *clip, int firstIndex, const QRectF &plot) override;
+    int drawMarks(QSGNode *clip, int firstIndex, const QRectF &plot) override
+    {
+        // 取（必要时新建）逐顶点着色的几何节点
+        while (clip->childCount() <= firstIndex)
+        {
+            auto *fresh = new QSGGeometryNode;
+            fresh->setGeometry(new QSGGeometry(QSGGeometry::defaultAttributes_ColoredPoint2D(), 0));
+            fresh->setFlag(QSGNode::OwnsGeometry);
+            fresh->setMaterial(new QSGVertexColorMaterial);
+            fresh->setFlag(QSGNode::OwnsMaterial);
+            clip->appendChildNode(fresh);
+        }
+        auto *node = static_cast<QSGGeometryNode *>(clip->childAtIndex(firstIndex));
+        QSGGeometry *geometry = node->geometry();
+
+        // **顶点数为 0 的节点会被批渲染器永久当成空的**（见 QuickChartItem::lineNode 的长注）——绝不给 0：
+        // 没东西画时摆三个透明的重合顶点。
+        const auto nothingToDraw = [&]() -> int {
+            if (geometry->vertexCount() != 3)
+                geometry->allocate(3);
+            geometry->setDrawingMode(QSGGeometry::DrawTriangles);
+            QSGGeometry::ColoredPoint2D *v = geometry->vertexDataAsColoredPoint2D();
+            for (int i = 0; i < 3; ++i)
+                v[i].set(-1.0f, -1.0f, 0, 0, 0, 0);
+            node->markDirty(QSGNode::DirtyGeometry);
+            return 1;
+        };
+
+        if (columnCount() == 0 || plot.isEmpty())
+            return nothingToDraw();
+
+        const double span = xAxis_.span();
+        const double ySpan = yAxis_.span();
+        if (!(span > 0.0) || !(ySpan > 0.0))
+            return nothingToDraw();
+
+        // 桶长按**当前视口**现算，两轴各算各的（规则见文件头「抽稀」）。视口不对齐格子，两端那格被
+        // 裁掉一部分是常态，交给裁剪节点收拾——换来的是缩放严格跟鼠标、平移严格跟手。
+        const double binSec = binX(span); // 视口单位 = 秒
+        const double binM = binY(ySpan);  // 视口单位 = 米
+        const auto timeBinOf = [&](const double t) { return std::floor(t / binSec); };
+
+        // 选列：每桶留首列。**按桶边界取、不按视口边界取**——选中哪几列只由数据与桶长决定，与视口
+        // 位置无关（按视口边界取的话，拖动时最边上那个半截桶的"首列"会随视口一直换人）。
+        // 视口外的列被钳进左右两个哑桶，下面那道交叠判据会把它们筛掉。
+        const auto times = std::views::iota(0, columnCount())
+            | std::views::transform([&](int i) { return timeAt(i); });
+        ChartThinning::thinIrregular(times, xAxis_.lo, xAxis_.hi, binSec, 1, binPick_);
+
+        // 一根风羽的尺寸：格子取两轴中较小的那条边，其中 kBarbFill 归风羽（见文件头「独占空间」）。
+        // max(1.0) 只为绘图区小到放不下一整格的退化情形兜底：宁可画小也不画出格。
+        const double cell = std::min(binSec * plot.width() / span, binM * plot.height() / ySpan);
+        const double footprint = std::max(1.0, cell * kBarbFill);
+        const double barbSize = footprint / (2.0 * kBarbReach);
+
+        // 图元半宽换算回视口单位：判交叠用。横纵各一份（两轴的 值/像素 比例不同）。
+        const double halfX = footprint * 0.5 * span / plot.width();
+        const double halfY = footprint * 0.5 * ySpan / plot.height();
+
+        // **判据是「图元与视口有交叠」，不是「桶心在视口内」**：按桶心判的话，拖动时边上那根先被裁剪
+        // 节点越切越少、桶心一越界就整根蒸发；判交叠则越界的那根照画，由 QSGClipNode 裁掉露在外面的
+        // 部分，滑出去是连续的。多画的那一两根全在裁剪区外，不占像素。
+        binPick_.erase(std::remove_if(binPick_.begin(), binPick_.end(),
+                                      [&](const int c) {
+                                          const double mid = (timeBinOf(timeAt(c)) + 0.5) * binSec;
+                                          return mid + halfX < xAxis_.lo || mid - halfX > xAxis_.hi;
+                                      }),
+                       binPick_.end());
+        if (binPick_.empty())
+            return nothingToDraw();
+
+        // ── 把这一帧要画的风羽逐根走一遍 ─────────────────────────────────────────────────
+        // 数顶点与写顶点**共用这一个遍历**：两趟必须选中同一批风羽，筛选各写一遍就是缓冲区溢出的引信。
+        // 两轴按公共桶选首值；高度由均匀参数反算。
+        const auto eachBarb = [&](auto &&visit) {
+            for (const int c : binPick_)
+            {
+                const auto &profile = columnAt(c);
+                const double x = xAxis_.toPixel((timeBinOf(timeAt(c)) + 0.5) * binSec, plot.left(), plot.right());
+                ChartThinning::thinUniform(profile.winds, yAxis_.lo, yAxis_.hi, binM, 1, gatePick_);
+                for (const int k : gatePick_)
+                {
+                    const auto &wind = profile.winds[k];
+                    if (!wind) continue; // 桶里的首门缺测：这一格不画，不往后找。
+                    const double s = std::hypot(wind.x(), wind.y());
+                    if (!std::isfinite(s)) continue;
+                    const double mid = (std::floor(profile.winds.positionAt(k) / binM) + 0.5) * binM;
+                    if (mid + halfY < yAxis_.lo || mid - halfY > yAxis_.hi)
+                        continue;
+                    visit(x, yAxis_.toPixel(mid, plot.bottom(), plot.top()), s, wind);
+                }
+            }
+        };
+
+        // 第一趟：数顶点
+        int vertices = 0;
+        eachBarb([&](double, double, const double s, const LinAlg::Vec3 &) { vertices += barbUnits(s) * 6; });
+        if (vertices == 0)
+            return nothingToDraw();
+
+        // 第二趟：写顶点
+        if (geometry->vertexCount() != vertices)
+            geometry->allocate(vertices);
+        geometry->setDrawingMode(QSGGeometry::DrawTriangles);
+        QSGGeometry::ColoredPoint2D *v = geometry->vertexDataAsColoredPoint2D();
+        int n = 0;
+        eachBarb([&](const double x, const double y, const double s, const LinAlg::Vec3 &wind) {
+            n += writeBarb(v + n, x, y, s, wind, barbSize, legible(colorForSpeed(s))); // 色带是固定色，按当前背景压到看得清
+        });
+        Q_ASSERT(n == vertices); // 两趟的计数必须一字不差：writeSegmentColored 恒写 6，barbUnits 与 writeBarb 分支一一对上
+        node->markDirty(QSGNode::DirtyGeometry);
+        return 1;
+    }
 
 private:
     // ── 纵轴的界：数据范围外扩到整桶（横轴的界住基类：一个设计窗宽、锚在最新列）──────────────────
@@ -192,14 +304,112 @@ private:
     static constexpr int kBandExp = 2;
 
     // 一根风羽要几个「段」（杆 + 羽毛 / 静风标记），每段 6 个顶点。先数后写，两趟。
-    [[nodiscard]] static int barbUnits(double speed);
+    [[nodiscard]] static int barbUnits(double speed)
+    {
+        if (speed < kHalfFeatherSpeed * 0.5)
+            return 2; // 杆 + 静风标记
+        const int halfUnits = static_cast<int>(std::lround(std::min(speed, kMaxSpeed) / kHalfFeatherSpeed));
+        return 1 + halfUnits / 2 + halfUnits % 2; // 杆 + 满羽 + 半羽
+    }
     // 写一根风羽，返回写入的顶点数
+    // 一根风羽 = 杆 + 若干羽毛（或静风标记），每样都是一段粗线。
     static int writeBarb(QSGGeometry::ColoredPoint2D *v, double x, double y, double speed, const LinAlg::Vec3 &wind,
-                         double sizePx, const QColor &color);
+                         double sizePx, const QColor &color)
+    {
+        const double half = kBarbLineWidth / 2.0;
+        int n = 0;
+
+        // 杆指向来风：ENU 的东/北分量取反，再转换到屏幕右/下坐标；静风不做除法。
+        const double ux = speed > 0.0 ? -wind.x() / speed : 0.0;
+        const double uy = speed > 0.0 ? wind.y() / speed : -1.0;
+        const double sx = -uy, sy = ux;                     // 羽毛伸出方向（杆的一侧）
+
+        // 旋转原点 = 数据点 = 杆中点：杆头(无羽)、尾端(有羽)各朝相反方向伸出半根 sizePx，
+        // 使 0°/90° 等各朝向的风羽都以数据点居中、同列对齐。
+        const double halfLen = sizePx * 0.5;
+        n += writeSegmentColored(v + n, x - ux * halfLen, y - uy * halfLen, x + ux * halfLen, y + uy * halfLen, half,
+                                 color);
+
+        // 静风：小方块，无羽毛（几何直出画不了圆；这个尺寸下与小空心圈看着一样）
+        if (speed < kHalfFeatherSpeed * 0.5)
+        {
+            const double r = sizePx * 0.12;
+            n += writeSegmentColored(v + n, x - r, y, x + r, y, r, color); // 一段"粗到成方块"的线
+            return n;
+        }
+
+        // 风速 → 半羽单位（封顶 kMaxSpeed = 满羽）；满羽 = 2 个半羽单位。
+        const int halfUnits = static_cast<int>(std::lround(std::min(speed, kMaxSpeed) / kHalfFeatherSpeed));
+        const int full = halfUnits / 2;
+        const int halfFeather = halfUnits % 2;
+
+        const double featherLen = sizePx * 0.42; // 满羽长度
+        const double featherGap = sizePx * 0.15; // 沿杆的羽毛间距
+        const double skew = featherGap;          // 羽毛斜指尾端（沿杆分量）
+        double pos = halfLen;                    // 从尾端(+halfLen)起，向杆头方向递减
+
+        const auto feather = [&](const double lenScale) {
+            const double rootX = x + ux * pos;
+            const double rootY = y + uy * pos;
+            n += writeSegmentColored(v + n, rootX, rootY, rootX + sx * featherLen * lenScale + ux * skew,
+                                     rootY + sy * featherLen * lenScale + uy * skew, half, color);
+        };
+
+        for (int i = 0; i < full; ++i)
+        {
+            feather(1.0);
+            pos -= featherGap;
+        }
+        if (halfFeather)
+        {
+            if (full == 0)
+                pos -= featherGap; // 仅半羽时离尾端留一格（气象惯例）
+            feather(0.5);
+        }
+        return n;
+    }
     // 一段粗线 = 两个三角形（6 顶点），逐顶点同色
     static int writeSegmentColored(QSGGeometry::ColoredPoint2D *v, double x0, double y0, double x1, double y1,
-                                   double half, const QColor &color);
-    [[nodiscard]] static QColor colorForSpeed(double speed);
+                                   double half, const QColor &color)
+    {
+        const auto ax = static_cast<float>(x0);
+        const auto ay = static_cast<float>(y0);
+        const auto bx = static_cast<float>(x1);
+        const auto by = static_cast<float>(y1);
+        const float dx = bx - ax;
+        const float dy = by - ay;
+        const float len = std::hypot(dx, dy);
+        // 退化段也占满六个顶点（零面积，画不出东西）。理由与 QuickChartItem::writeSegment 同一条：
+        // 返 0 会逼调用方写完再 allocate 收口，而 allocate 丢弃已写数据 —— 整批风羽当场变乱码。
+        if (len < 1e-6f)
+        {
+            const auto r0 = static_cast<uchar>(color.red());
+            const auto g0 = static_cast<uchar>(color.green());
+            const auto b0 = static_cast<uchar>(color.blue());
+            for (int i = 0; i < 6; ++i)
+                v[i].set(ax, ay, r0, g0, b0, 255);
+            return 6;
+        }
+        const auto h = static_cast<float>(half);
+        const float nx = -dy / len * h;
+        const float ny = dx / len * h;
+        const auto r = static_cast<uchar>(color.red());
+        const auto g = static_cast<uchar>(color.green());
+        const auto b = static_cast<uchar>(color.blue());
+        v[0].set(ax + nx, ay + ny, r, g, b, 255);
+        v[1].set(ax - nx, ay - ny, r, g, b, 255);
+        v[2].set(bx + nx, by + ny, r, g, b, 255);
+        v[3].set(bx + nx, by + ny, r, g, b, 255);
+        v[4].set(ax - nx, ay - ny, r, g, b, 255);
+        v[5].set(bx - nx, by - ny, r, g, b, 255);
+        return 6;
+    }
+    [[nodiscard]] static QColor colorForSpeed(double speed)
+    {
+        // 蓝→红随风速升高：hue 240(蓝)→0(红) over [0, kMaxSpeed]，过青/绿/黄/橙；≥kMaxSpeed 恒红。
+        const double t = std::clamp(speed / kMaxSpeed, 0.0, 1.0);
+        return QColor::fromHsvF(static_cast<float>((240.0 / 360.0) * (1.0 - t)), 0.85f, 0.95f);
+    }
 
     static constexpr double kMaxSpeed = 24.0;        // ≥此：满羽 + 恒红（6 根满羽 = 24/4）
     static constexpr double kFullFeatherSpeed = 4.0; // 一根满羽代表的风速 (m/s)
@@ -261,231 +471,6 @@ private:
 // ============================================================
 // WindBarbChart —— inline 实现
 // ============================================================
-
-inline QColor WindBarbChart::colorForSpeed(const double speed)
-{
-    // 蓝→红随风速升高：hue 240(蓝)→0(红) over [0, kMaxSpeed]，过青/绿/黄/橙；≥kMaxSpeed 恒红。
-    const double t = std::clamp(speed / kMaxSpeed, 0.0, 1.0);
-    return QColor::fromHsvF(static_cast<float>((240.0 / 360.0) * (1.0 - t)), 0.85f, 0.95f);
-}
-
-inline int WindBarbChart::barbUnits(const double speed)
-{
-    if (speed < kHalfFeatherSpeed * 0.5)
-        return 2; // 杆 + 静风标记
-    const int halfUnits = static_cast<int>(std::lround(std::min(speed, kMaxSpeed) / kHalfFeatherSpeed));
-    return 1 + halfUnits / 2 + halfUnits % 2; // 杆 + 满羽 + 半羽
-}
-
-inline int WindBarbChart::writeSegmentColored(QSGGeometry::ColoredPoint2D *v, const double x0, const double y0,
-                                             const double x1, const double y1, const double half,
-                                             const QColor &color)
-{
-    const auto ax = static_cast<float>(x0);
-    const auto ay = static_cast<float>(y0);
-    const auto bx = static_cast<float>(x1);
-    const auto by = static_cast<float>(y1);
-    const float dx = bx - ax;
-    const float dy = by - ay;
-    const float len = std::hypot(dx, dy);
-    // 退化段也占满六个顶点（零面积，画不出东西）。理由与 QuickChartItem::writeSegment 同一条：
-    // 返 0 会逼调用方写完再 allocate 收口，而 allocate 丢弃已写数据 —— 整批风羽当场变乱码。
-    if (len < 1e-6f)
-    {
-        const auto r0 = static_cast<uchar>(color.red());
-        const auto g0 = static_cast<uchar>(color.green());
-        const auto b0 = static_cast<uchar>(color.blue());
-        for (int i = 0; i < 6; ++i)
-            v[i].set(ax, ay, r0, g0, b0, 255);
-        return 6;
-    }
-    const auto h = static_cast<float>(half);
-    const float nx = -dy / len * h;
-    const float ny = dx / len * h;
-    const auto r = static_cast<uchar>(color.red());
-    const auto g = static_cast<uchar>(color.green());
-    const auto b = static_cast<uchar>(color.blue());
-    v[0].set(ax + nx, ay + ny, r, g, b, 255);
-    v[1].set(ax - nx, ay - ny, r, g, b, 255);
-    v[2].set(bx + nx, by + ny, r, g, b, 255);
-    v[3].set(bx + nx, by + ny, r, g, b, 255);
-    v[4].set(ax - nx, ay - ny, r, g, b, 255);
-    v[5].set(bx - nx, by - ny, r, g, b, 255);
-    return 6;
-}
-
-// 一根风羽 = 杆 + 若干羽毛（或静风标记），每样都是一段粗线。
-inline int WindBarbChart::writeBarb(QSGGeometry::ColoredPoint2D *v, const double x, const double y,
-                                   const double speed, const LinAlg::Vec3 &wind, const double sizePx, const QColor &color)
-{
-    const double half = kBarbLineWidth / 2.0;
-    int n = 0;
-
-    // 杆指向来风：ENU 的东/北分量取反，再转换到屏幕右/下坐标；静风不做除法。
-    const double ux = speed > 0.0 ? -wind.x() / speed : 0.0;
-    const double uy = speed > 0.0 ? wind.y() / speed : -1.0;
-    const double sx = -uy, sy = ux;                     // 羽毛伸出方向（杆的一侧）
-
-    // 旋转原点 = 数据点 = 杆中点：杆头(无羽)、尾端(有羽)各朝相反方向伸出半根 sizePx，
-    // 使 0°/90° 等各朝向的风羽都以数据点居中、同列对齐。
-    const double halfLen = sizePx * 0.5;
-    n += writeSegmentColored(v + n, x - ux * halfLen, y - uy * halfLen, x + ux * halfLen, y + uy * halfLen, half,
-                             color);
-
-    // 静风：小方块，无羽毛（几何直出画不了圆；这个尺寸下与小空心圈看着一样）
-    if (speed < kHalfFeatherSpeed * 0.5)
-    {
-        const double r = sizePx * 0.12;
-        n += writeSegmentColored(v + n, x - r, y, x + r, y, r, color); // 一段"粗到成方块"的线
-        return n;
-    }
-
-    // 风速 → 半羽单位（封顶 kMaxSpeed = 满羽）；满羽 = 2 个半羽单位。
-    const int halfUnits = static_cast<int>(std::lround(std::min(speed, kMaxSpeed) / kHalfFeatherSpeed));
-    const int full = halfUnits / 2;
-    const int halfFeather = halfUnits % 2;
-
-    const double featherLen = sizePx * 0.42; // 满羽长度
-    const double featherGap = sizePx * 0.15; // 沿杆的羽毛间距
-    const double skew = featherGap;          // 羽毛斜指尾端（沿杆分量）
-    double pos = halfLen;                    // 从尾端(+halfLen)起，向杆头方向递减
-
-    const auto feather = [&](const double lenScale) {
-        const double rootX = x + ux * pos;
-        const double rootY = y + uy * pos;
-        n += writeSegmentColored(v + n, rootX, rootY, rootX + sx * featherLen * lenScale + ux * skew,
-                                 rootY + sy * featherLen * lenScale + uy * skew, half, color);
-    };
-
-    for (int i = 0; i < full; ++i)
-    {
-        feather(1.0);
-        pos -= featherGap;
-    }
-    if (halfFeather)
-    {
-        if (full == 0)
-            pos -= featherGap; // 仅半羽时离尾端留一格（气象惯例）
-        feather(0.5);
-    }
-    return n;
-}
-
-inline int WindBarbChart::drawMarks(QSGNode *clip, const int firstIndex, const QRectF &plot)
-{
-    // 取（必要时新建）逐顶点着色的几何节点
-    while (clip->childCount() <= firstIndex)
-    {
-        auto *fresh = new QSGGeometryNode;
-        fresh->setGeometry(new QSGGeometry(QSGGeometry::defaultAttributes_ColoredPoint2D(), 0));
-        fresh->setFlag(QSGNode::OwnsGeometry);
-        fresh->setMaterial(new QSGVertexColorMaterial);
-        fresh->setFlag(QSGNode::OwnsMaterial);
-        clip->appendChildNode(fresh);
-    }
-    auto *node = static_cast<QSGGeometryNode *>(clip->childAtIndex(firstIndex));
-    QSGGeometry *geometry = node->geometry();
-
-    // **顶点数为 0 的节点会被批渲染器永久当成空的**（见 QuickChartItem::lineNode 的长注）——绝不给 0：
-    // 没东西画时摆三个透明的重合顶点。
-    const auto nothingToDraw = [&]() -> int {
-        if (geometry->vertexCount() != 3)
-            geometry->allocate(3);
-        geometry->setDrawingMode(QSGGeometry::DrawTriangles);
-        QSGGeometry::ColoredPoint2D *v = geometry->vertexDataAsColoredPoint2D();
-        for (int i = 0; i < 3; ++i)
-            v[i].set(-1.0f, -1.0f, 0, 0, 0, 0);
-        node->markDirty(QSGNode::DirtyGeometry);
-        return 1;
-    };
-
-    if (columnCount() == 0 || plot.isEmpty())
-        return nothingToDraw();
-
-    const double span = xAxis_.span();
-    const double ySpan = yAxis_.span();
-    if (!(span > 0.0) || !(ySpan > 0.0))
-        return nothingToDraw();
-
-    // 桶长按**当前视口**现算，两轴各算各的（规则见文件头「抽稀」）。视口不对齐格子，两端那格被
-    // 裁掉一部分是常态，交给裁剪节点收拾——换来的是缩放严格跟鼠标、平移严格跟手。
-    const double binSec = binX(span); // 视口单位 = 秒
-    const double binM = binY(ySpan);  // 视口单位 = 米
-    const auto timeBinOf = [&](const double t) { return std::floor(t / binSec); };
-
-    // 选列：每桶留首列。**按桶边界取、不按视口边界取**——选中哪几列只由数据与桶长决定，与视口
-    // 位置无关（按视口边界取的话，拖动时最边上那个半截桶的"首列"会随视口一直换人）。
-    // 视口外的列被钳进左右两个哑桶，下面那道交叠判据会把它们筛掉。
-    const auto times = std::views::iota(0, columnCount())
-        | std::views::transform([&](int i) { return timeAt(i); });
-    ChartThinning::thinIrregular(times, xAxis_.lo, xAxis_.hi, binSec, 1, binPick_);
-
-    // 一根风羽的尺寸：格子取两轴中较小的那条边，其中 kBarbFill 归风羽（见文件头「独占空间」）。
-    // max(1.0) 只为绘图区小到放不下一整格的退化情形兜底：宁可画小也不画出格。
-    const double cell = std::min(binSec * plot.width() / span, binM * plot.height() / ySpan);
-    const double footprint = std::max(1.0, cell * kBarbFill);
-    const double barbSize = footprint / (2.0 * kBarbReach);
-
-    // 图元半宽换算回视口单位：判交叠用。横纵各一份（两轴的 值/像素 比例不同）。
-    const double halfX = footprint * 0.5 * span / plot.width();
-    const double halfY = footprint * 0.5 * ySpan / plot.height();
-
-    // **判据是「图元与视口有交叠」，不是「桶心在视口内」**：按桶心判的话，拖动时边上那根先被裁剪
-    // 节点越切越少、桶心一越界就整根蒸发；判交叠则越界的那根照画，由 QSGClipNode 裁掉露在外面的
-    // 部分，滑出去是连续的。多画的那一两根全在裁剪区外，不占像素。
-    binPick_.erase(std::remove_if(binPick_.begin(), binPick_.end(),
-                                  [&](const int c) {
-                                      const double mid = (timeBinOf(timeAt(c)) + 0.5) * binSec;
-                                      return mid + halfX < xAxis_.lo || mid - halfX > xAxis_.hi;
-                                  }),
-                   binPick_.end());
-    if (binPick_.empty())
-        return nothingToDraw();
-
-    // ── 把这一帧要画的风羽逐根走一遍 ─────────────────────────────────────────────────
-    // 数顶点与写顶点**共用这一个遍历**：两趟必须选中同一批风羽，筛选各写一遍就是缓冲区溢出的引信。
-    // 两轴按公共桶选首值；高度由均匀参数反算。
-    const auto eachBarb = [&](auto &&visit) {
-        for (const int c : binPick_)
-        {
-            const auto &profile = columnAt(c);
-            const double x = xAxis_.toPixel((timeBinOf(timeAt(c)) + 0.5) * binSec, plot.left(), plot.right());
-            ChartThinning::thinUniform(profile.winds, yAxis_.lo, yAxis_.hi, binM, 1, gatePick_);
-            for (const int k : gatePick_)
-            {
-                const auto &wind = profile.winds[k];
-                if (!wind) continue; // 桶里的首门缺测：这一格不画，不往后找。
-                const double s = std::hypot(wind.x(), wind.y());
-                if (!std::isfinite(s)) continue;
-                const double mid = (std::floor(profile.winds.positionAt(k) / binM) + 0.5) * binM;
-                if (mid + halfY < yAxis_.lo || mid - halfY > yAxis_.hi)
-                    continue;
-                visit(x, yAxis_.toPixel(mid, plot.bottom(), plot.top()), s, wind);
-            }
-        }
-    };
-
-    // 第一趟：数顶点
-    int vertices = 0;
-    eachBarb([&](double, double, const double s, const LinAlg::Vec3 &) { vertices += barbUnits(s) * 6; });
-    if (vertices == 0)
-        return nothingToDraw();
-
-    // 第二趟：写顶点
-    if (geometry->vertexCount() != vertices)
-        geometry->allocate(vertices);
-    geometry->setDrawingMode(QSGGeometry::DrawTriangles);
-    QSGGeometry::ColoredPoint2D *v = geometry->vertexDataAsColoredPoint2D();
-    int n = 0;
-    eachBarb([&](const double x, const double y, const double s, const LinAlg::Vec3 &wind) {
-        n += writeBarb(v + n, x, y, s, wind, barbSize, legible(colorForSpeed(s))); // 色带是固定色，按当前背景压到看得清
-    });
-    Q_ASSERT(n == vertices); // 两趟的计数必须一字不差：writeSegmentColored 恒写 6，barbUnits 与 writeBarb 分支一一对上
-    node->markDirty(QSGNode::DirtyGeometry);
-    return 1;
-}
-
-
 
 class WindBarbItem : public WindBarbChart
 {
