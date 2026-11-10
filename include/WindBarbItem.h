@@ -116,14 +116,13 @@ public:
     }
 
 protected:
-    // 临时只读视图，不保存第二份数据。均匀列的 heights 为空，由 start/step 定位。
+    // 临时只读视图，不保存第二份数据；高度由 start/step 定位。
     struct Column
     {
         RxTime at;
         std::span<const LinAlg::Vec3> winds;
-        std::span<const double> heights;
         double start = 0, step = 1;
-        double heightAt(int i) const { return heights.empty() ? start + double(i) * step : heights[i]; }
+        double heightAt(int i) const { return start + double(i) * step; }
     };
     virtual int columnCount() const = 0;
     virtual Column columnAt(int i) const = 0;
@@ -452,17 +451,14 @@ inline int WindBarbChart::drawMarks(QSGNode *clip, const int firstIndex, const Q
 
     // ── 把这一帧要画的风羽逐根走一遍 ─────────────────────────────────────────────────
     // 数顶点与写顶点**共用这一个遍历**：两趟必须选中同一批风羽，筛选各写一遍就是缓冲区溢出的引信。
-    // 两轴按公共桶选首值；高度由均匀参数反算或非均匀位置序列提供。
+    // 两轴按公共桶选首值；高度由均匀参数反算。
     const auto eachBarb = [&](auto &&visit) {
         for (const int c : binPick_)
         {
             const auto profile = columnAt(c);
             const double x = xAxis_.toPixel((timeBinOf(timeAt(c)) + 0.5) * binSec, plot.left(), plot.right());
-            if (profile.heights.empty())
-                ChartThinning::thinUniform(profile.start, profile.step, static_cast<int>(profile.winds.size()),
-                    yAxis_.lo, yAxis_.hi, binM, 1, gatePick_);
-            else
-                ChartThinning::thinIrregular(profile.heights, yAxis_.lo, yAxis_.hi, binM, 1, gatePick_);
+            ChartThinning::thinUniform(profile.start, profile.step, static_cast<int>(profile.winds.size()),
+                yAxis_.lo, yAxis_.hi, binM, 1, gatePick_);
             for (const int k : gatePick_)
             {
                 const auto &wind = profile.winds[k];
@@ -499,7 +495,6 @@ inline int WindBarbChart::drawMarks(QSGNode *clip, const int firstIndex, const Q
 
 
 
-// 均匀版保留既有数据入口和创建配置。
 class WindBarbItem : public WindBarbChart
 {
     Q_OBJECT
@@ -523,44 +518,9 @@ protected:
     Column columnAt(int i) const override
     {
         const auto &frame = *history_.at(i);
-        return {frame.at, frame.winds, {}, frame.startHeightM, frame.heightStepM};
+        return {frame.at, frame.winds, frame.startHeightM, frame.heightStepM};
     }
     void resetHistory(std::size_t capacity) override { history_ = VerticalWindProfileHistory(capacity); }
 private:
     VerticalWindProfileHistory history_{1};
-};
-
-// 非均匀版只在推送时校验整帧；后续绘制信任两数组对应，不逐点检查长度。
-class NonuniformWindBarbItem : public WindBarbChart
-{
-    Q_OBJECT
-    QML_ELEMENT
-public:
-    explicit NonuniformWindBarbItem(QQuickItem *parent = nullptr)
-        : NonuniformWindBarbItem(QVariantMap{{"heightBins", 1}, {"windowSeconds", 1.0},
-            {"columnSeconds", 1.0}, {"maxHeight", 1.0}}, parent) {}
-    explicit NonuniformWindBarbItem(const QVariantMap &config, QQuickItem *parent = nullptr) : WindBarbChart(parent)
-    { configure(config); }
-    Q_INVOKABLE bool appendColumn(NonuniformVerticalWindProfilePtr profile)
-    {
-        if (!profile || profile->heights.size() != profile->winds.size()
-            || profile->winds.size() < static_cast<std::size_t>(minimumLayers())) return false;
-        for (std::size_t i = 0; i < profile->heights.size(); ++i)
-            if (!std::isfinite(profile->heights[i])
-                || (i > 0 && !(profile->heights[i] > profile->heights[i - 1]))) return false;
-        const auto at = profile->at;
-        history_.append(std::move(profile));
-        columnAccepted(at);
-        return true;
-    }
-protected:
-    int columnCount() const override { return static_cast<int>(history_.size()); }
-    Column columnAt(int i) const override
-    {
-        const auto &frame = *history_.at(i);
-        return {frame.at, frame.winds, frame.heights};
-    }
-    void resetHistory(std::size_t capacity) override { history_ = NonuniformVerticalWindProfileHistory(capacity); }
-private:
-    NonuniformVerticalWindProfileHistory history_{1};
 };

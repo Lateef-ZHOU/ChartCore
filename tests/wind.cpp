@@ -20,7 +20,6 @@
 // 实物设备可先引入 Windows 头；绘图公开头也必须能在 near/far 宏存在时使用。
 #include <Windows.h>
 #endif
-#include "NonuniformWind2DItem.h"
 #include "Wind2DItem.h"
 #include "WindBarbItem.h"
 
@@ -48,21 +47,7 @@ public:
     }
     using Wind2DItem::thin;
 };
-class ProfileProbe : public NonuniformWind2DItem
-{
-public:
-    explicit ProfileProbe(const QVariantMap &config) {
-        classBegin(); setConfiguration(config); componentComplete();
-    }
-};
-class BarbProbe : public NonuniformWindBarbItem
-{
-public:
-    using NonuniformWindBarbItem::NonuniformWindBarbItem;
-    using NonuniformWindBarbItem::columnCount;
-    using NonuniformWindBarbItem::columnAt;
-};
-class UniformBarbProbe : public WindBarbItem
+class BarbProbe : public WindBarbItem
 {
 public:
     using WindBarbItem::WindBarbItem;
@@ -73,9 +58,8 @@ class Source : public QObject
 {
     Q_OBJECT
 Q_SIGNALS:
-    void profile(QVector<double> ranges, QVector<double> values);
-    void column(NonuniformVerticalWindProfilePtr frame);
-    void delivered(bool accepted);
+    void profile(QVector<double> values);
+    void column(VerticalWindProfilePtr frame);
 };
 
 static void thinning()
@@ -120,19 +104,18 @@ static void thinning()
     check(picks == std::vector<int>({0, 3, 5}), "irregular samples use metres rather than array stride");
 }
 
-static QVariantMap profileConfig()
+static QVariantMap profileConfig(double rangeStart)
 {
-    return {{"minimum", -30}, {"maximum", 30}, {"rangeMinimum", 0}, {"rangeMaximum", 27000},
+    return {{"rows", 1000}, {"rangeStart", rangeStart}, {"gateSpacing", 60}, {"minimum", -30}, {"maximum", 30},
             {"name", "wind"}, {"title", "wind"}, {"color", QColor(Qt::blue)}};
 }
 static QVariantMap barbConfig()
 {
     return {{"heightBins", 1}, {"windowSeconds", 2}, {"columnSeconds", 1}, {"maxHeight", 1500}};
 }
-static NonuniformVerticalWindProfilePtr frame(RxTime at, double height)
+static VerticalWindProfilePtr frame(RxTime at, double startHeight)
 {
-    return std::make_shared<const NonuniformVerticalWindProfileUnit>(
-        at, std::vector<double>{height, height + 15, height + 150},
+    return std::make_shared<const VerticalWindProfileUnit>(at, startHeight, 15.0,
         std::vector<LinAlg::Vec3>{{2, 1, 0}, {3, 2, 0}, {4, 3, 0}});
 }
 
@@ -146,77 +129,46 @@ int main(int argc, char **argv)
     const auto now = std::chrono::system_clock::now();
     const double nan = std::numeric_limits<double>::quiet_NaN();
     {
-        ProfileProbe item(profileConfig());
-        item.setSize({600, 500});
-        QVector<double> ranges{0, 15, 30, 3000, 3060, 12000};
-        QVector<double> values{1, 2, 3, 4, 5, 6};
-        check(item.setData(ranges, values), "accept parallel arrays");
-        item.applyHover(3020);
-        check(item.hover() && item.hover()->at == 3000 && item.hover()->text.contains("4.000"),
-              "hover uses nearest physical distance");
-        ranges[3] = 4000; values[3] = 99;
-        item.applyHover(3020);
-        check(item.hover()->at == 3000 && item.hover()->text.contains("4.000"), "QVector COW protects accepted snapshot");
-        check(!item.setData({0, 1}, {7}), "length mismatch rejected at push");
-        check(!item.setData({0, 0}, {1, 2}), "duplicate positions rejected");
-        check(!item.setData({1, 0}, {1, 2}), "unsorted positions rejected");
-        check(!item.setData({0, nan}, {1, 2}), "nonfinite positions rejected");
-        item.applyHover(12000);
-        check(item.hover()->text.contains("6.000"), "rejection leaves old full frame intact");
-        check(item.setData({500}, {8}), "single sample accepted");
-        check(item.yAxis().span() > 0, "single position does not collapse axis");
-        item.applyHover(500);
-        check(item.hover()->text.contains("8.000"), "latest profile replaces prior profile");
-        check(item.setData({}, {}), "empty parallel arrays clear profile");
-        item.applyHover(0);
-        check(!item.hover(), "empty profile has no old values");
-    }
-    {
-        auto config = profileConfig();
-        config.insert("rows", 1000); config.insert("gateSpacing", 60);
-        UniformProbe item(config);
+        UniformProbe item(profileConfig(0));
         item.setSize({600, 200});
         QVector<double> values(1000, 1);
         values[100] = nan; values[101] = nan;
         item.setData(values);
         QList<int> selected;
         item.thin({}, QRectF(0, 0, 600, 200), selected);
-        check(selected.size() < 1000, "uniform profile now thins along distance Y");
+        check(selected.size() < 1000, "uniform profile thins along distance Y");
         check(selected.contains(100), "uniform thinning retains missing-data separator");
         item.applyHover(2.5);
-        check(item.hover()->text.contains("180 m"), "uniform legacy gate convention unchanged");
+        check(item.hover()->text.contains("120 m"), "gate 2 at start + 2 x spacing");
+        check(item.configuration().value("rangeStart").toDouble() == 0, "range start is part of the creation configuration");
+        UniformProbe shifted(profileConfig(30));
+        shifted.setSize({600, 200});
+        shifted.setData(values);
+        shifted.applyHover(2.5);
+        check(shifted.hover()->text.contains("150 m"), "explicit range start shifts every gate");
     }
     {
         BarbProbe item(barbConfig());
         item.setSize({800, 600});
         auto first = frame(now, 10);
-        std::weak_ptr<const NonuniformVerticalWindProfileUnit> weak = first;
-        check(item.appendColumn(first), "accept nonuniform whole column");
-        check(item.columnAt(0).winds.data() == first->winds.data()
-              && item.columnAt(0).heights.data() == first->heights.data(), "history shares whole immutable frame, no array copies");
+        std::weak_ptr<const VerticalWindProfileUnit> weak = first;
+        item.appendColumn(first);
+        check(item.columnCount() == 1 && item.columnAt(0).winds.data() == first->winds.data(),
+              "history shares whole immutable frame, no array copies");
         first.reset();
-        auto bad = std::make_shared<const NonuniformVerticalWindProfileUnit>(
-            now, std::vector<double>{1}, std::vector<LinAlg::Vec3>{});
-        check(!item.appendColumn(bad) && item.columnCount() == 1, "mismatched column rejected before ring changes");
-        auto duplicate = std::make_shared<const NonuniformVerticalWindProfileUnit>(
-            now, std::vector<double>{1, 1}, std::vector<LinAlg::Vec3>{{1, 2, 3}, {1, 2, 3}});
-        check(!item.appendColumn(duplicate), "nonuniform height order checked at ingress");
+        item.appendColumn(std::make_shared<const VerticalWindProfileUnit>(now, 0.0, 0.0, std::vector<LinAlg::Vec3>{{1, 2, 3}}));
+        check(item.columnCount() == 1, "invalid height grid rejected before ring changes");
         for (int i = 1; i <= 4; ++i)
-            check(item.appendColumn(frame(now + std::chrono::seconds(i), i * 100)), "append whole frame");
+            item.appendColumn(frame(now + std::chrono::seconds(i), i * 100));
         check(item.columnCount() == 3 && weak.expired(), "ring capacity enforced and oldest whole frame released");
-        check(item.columnAt(0).heightAt(0) == 200 && item.columnAt(2).heightAt(2) == 550,
-              "wrapped ring preserves matching heights and winds");
-        UniformBarbProbe uniform(barbConfig());
-        uniform.setSize({800, 600});
-        auto regular = std::make_shared<const VerticalWindProfileUnit>(
-            now, 10.0, 15.0, std::vector<LinAlg::Vec3>{{1, 0, 0}, {2, 0, 0}});
-        uniform.appendColumn(regular);
-        check(uniform.columnCount() == 1 && uniform.columnAt(0).heightAt(1) == 25,
-              "uniform API and frame sharing retained");
+        check(item.columnAt(0).heightAt(0) == 200 && item.columnAt(2).heightAt(2) == 430,
+              "wrapped ring preserves start and step heights");
     }
     Source source;
-    qRegisterMetaType<NonuniformVerticalWindProfilePtr>();
+    qRegisterMetaType<VerticalWindProfilePtr>();
     QQmlEngine engine;
+    int warnings = 0; // 类型不符的 QML 调用（如把别的帧类型交给 appendColumn）只会出警告
+    QObject::connect(&engine, &QQmlEngine::warnings, &engine, [&](const auto &list) { warnings += int(list.size()); });
     engine.rootContext()->setContextProperty("source", &source);
     QQmlComponent component(&engine);
     component.setData(R"QML(
@@ -229,13 +181,12 @@ Window {
     color: "#202020"
     ColumnLayout {
         anchors.fill: parent
-        NonuniformWind2DView {
+        Wind2DView {
             id: profile; objectName: "profiles"
             Layout.fillWidth: true; Layout.fillHeight: true
-            specification: ({windMin: -30, windMax: 30, cnrMin: -30, cnrMax: 30,
-                             rangeMinimum: 0, rangeMaximum: 1500, ranges: [0, 15, 30, 300, 1500]})
+            specification: ({rows: 8, rangeStart: 0, gateSpacing: 15, windMin: -30, windMax: 30, cnrMin: -30, cnrMax: 30})
         }
-        NonuniformWindBarbItem {
+        WindBarbItem {
             id: barbs; objectName: "barbs"
             Layout.fillWidth: true; Layout.fillHeight: true
             configuration: ({heightBins: 1, windowSeconds: 120, columnSeconds: 1, maxHeight: 1500})
@@ -243,37 +194,31 @@ Window {
     }
     Connections {
         target: source
-        function onProfile(ranges, values) { source.delivered(profile.updateWS(ranges, values)); profile.updateCNR(ranges, values) }
-        function onColumn(frame) { source.delivered(barbs.appendColumn(frame)) }
+        function onProfile(values) { profile.updateWS(values); profile.updateCNR(values) }
+        function onColumn(frame) { barbs.appendColumn(frame) }
     }
 })QML", QUrl());
     std::unique_ptr<QObject> root(component.create());
     if (!root) qFatal("%s", qPrintable(component.errorString()));
     auto *window = qobject_cast<QQuickWindow *>(root.get());
-    auto *wind = root->findChild<NonuniformWind2DItem *>("windSpeed");
-    auto *cnr = root->findChild<NonuniformWind2DItem *>("cnr");
-    auto *barbs = root->findChild<NonuniformWindBarbItem *>("barbs");
+    auto *wind = root->findChild<Wind2DItem *>("windSpeed");
+    auto *cnr = root->findChild<Wind2DItem *>("cnr");
+    auto *barbs = root->findChild<WindBarbItem *>("barbs");
     check(window && wind && cnr && barbs, "QML registered types assemble");
-    for (auto *profile : {wind, cnr}) {
-        profile->applyHover(28);
-        check(profile->hover() && profile->hover()->at == 30
-              && profile->hover()->text.contains("0.000"), "initial hover snaps to interior gate");
-    }
-    bool accepted = false;
-    QObject::connect(&source, &Source::delivered, &source, [&](bool ok) { accepted = ok; });
-    Q_EMIT source.profile({0, 15, 30, 150, 300, 600, 900, 1500}, {1, 3, 5, -2, 6, 12, 8, 4});
-    check(accepted, "QML forwards separate profile arrays");
+    Q_EMIT source.profile({1, 3, 5, -2, 6, 12, 8, 4});
+    wind->applyHover(3.5);
+    check(wind->hover() && wind->hover()->text.contains("45 m") && wind->hover()->text.contains("-2.000"),
+          "QML forwards values onto start + k x spacing gates");
     for (int i = 0; i < 90; i += 5) {
-        auto data = std::make_shared<NonuniformVerticalWindProfileUnit>();
-        data->at = now - std::chrono::seconds(90 - i);
-        data->heights = {0, 15, 30, 150, 300, 600, 900, 1500};
-        for (double h : data->heights) data->winds.emplace_back(3 + h / 500, 2 + i / 10.0, 0);
-        Q_EMIT source.column(std::move(data));
+        std::vector<LinAlg::Vec3> winds;
+        for (int k = 0; k < 8; ++k) winds.emplace_back(3 + k / 5.0, 2 + i / 10.0, 0);
+        Q_EMIT source.column(std::make_shared<const VerticalWindProfileUnit>(now - std::chrono::seconds(90 - i), 0.0, 7.5,
+                                                                             std::move(winds)));
     }
-    check(accepted, "QML forwards typed immutable whole frame");
+    check(warnings == 0, "QML forwards typed immutable whole frame without type warnings");
     wait(200);
-    Q_EMIT wind->hoverMoved(601);
-    check(cnr->hover() && cnr->hover()->at == 600, "hover links in physical metres");
+    Q_EMIT wind->hoverMoved(2.5);
+    check(cnr->hover() && cnr->hover()->text.contains("30 m"), "hover links across the pair");
     Q_EMIT wind->hoverEnded();
     check(!cnr->hover(), "hover end links");
     const double fullSpan = wind->yAxis().span();
@@ -283,19 +228,14 @@ Window {
     QCoreApplication::sendEvent(wind, &event);
     wait(240);
     check(wind->yAxis().span() < fullSpan && wind->yAxis().lo == cnr->yAxis().lo
-          && wind->yAxis().hi == cnr->yAxis().hi, "nonuniform vertical zoom remains linked");
-    barbs->setVisible(false);
-    Q_EMIT source.column(frame(now, 300));
-    check(accepted, "hidden wind barbs still retain frame");
-    barbs->setVisible(true);
+          && wind->yAxis().hi == cnr->yAxis().hi, "vertical zoom remains linked");
     window->resize(1300, 900);
     wait(80);
     if (app.arguments().contains("--snapshot")) {
         const auto image = window->grabWindow();
-        check(!image.isNull() && image.save("nonuniform.png"), "rendered snapshot saved");
+        check(!image.isNull() && image.save("wind.png"), "rendered snapshot saved");
     }
-    wait(8000);
-    qInfo() << checks << "nonuniform chart checks passed";
+    qInfo() << checks << "wind chart checks passed";
     return 0;
 }
-#include "nonuniform.moc"
+#include "wind.moc"

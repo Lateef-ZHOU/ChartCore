@@ -32,7 +32,7 @@
 //
 // **纵轴是沿波束的斜距，不是高度**：本图画的是**单束**的逐门量，束是斜的。高度 = 斜距 ×
 // sin(高度角) 要知道束的朝向，而本图不认识朝向——那是风廓线的事（WindProfile）。
-// 门 → 斜距的口径只认 RangeGate::rangeOf 那一处（与风廓线共用）。
+// 门 → 斜距的口径只认 RangeGate::rangeOf 那一处（与风廓线共用），起点与门距由创建配置给出。
 //
 // **纵轴的视口单位是门格**：第 k 门占 [k, k+1)，折线过格心 k+½；米只出现在刻度文字与悬停读数里
 // （见 ticksY / hoverProbe）。这只对斜距成立：门 → 斜距不随束的朝向变，所以每一帧都落在同一套
@@ -60,6 +60,7 @@ public:
     QVariantMap configuration() const
     {
         return {{"rows", rowCount_},
+                {"rangeStart", rangeStart_},
                 {"gateSpacing", distPerBin_},
                 {"minimum", valLo_},
                 {"maximum", valHi_},
@@ -76,11 +77,14 @@ public:
             return;
         }
         const int rows = value.value("rows").toInt();
+        const double start = value.value("rangeStart").toDouble();
         const double spacing = value.value("gateSpacing").toDouble();
         const int low = value.value("minimum").toInt(), high = value.value("maximum").toInt();
-        if (rows < 1 || !std::isfinite(spacing) || spacing <= 0 || high <= low)
+        if (rows < 1 || !value.value("rangeStart").isValid() || !std::isfinite(start) || !std::isfinite(spacing) || spacing <= 0
+            || high <= low)
             qFatal("Invalid wind profile configuration.");
         rowCount_ = rows;
+        rangeStart_ = start;
         distPerBin_ = spacing;
         valLo_ = low;
         valHi_ = high;
@@ -148,7 +152,7 @@ protected:
     // ⇒ 斜距(v) = rangeOf(0) + (v − ½)·门距。
     [[nodiscard]] QList<AxisText> ticksY(const double lo, const double hi, const int target) const override
     {
-        return ChartTicks::decimal(lo, hi, target, RangeGate::rangeOf(0, distPerBin_) - 0.5 * distPerBin_,
+        return ChartTicks::decimal(lo, hi, target, RangeGate::rangeOf(0, rangeStart_, distPerBin_) - 0.5 * distPerBin_,
                                    distPerBin_);
     }
 
@@ -161,7 +165,7 @@ protected:
         const int row = std::clamp(static_cast<int>(std::floor(dataY)), 0, rowCount_ - 1);
         const QPointF &p = points[row];
         return AxisText{p.y(), QStringLiteral("斜距  %1 m\n%2  %3")
-                                    .arg(RangeGate::rangeOf(row, distPerBin_), 0, 'f', 0)
+                                    .arg(RangeGate::rangeOf(row, rangeStart_, distPerBin_), 0, 'f', 0)
                                     .arg(series_[0].name)
                                     .arg(p.x(), 0, 'f', 3)};
     }
@@ -171,6 +175,7 @@ private:
     QList<Series> series_;
     QList<int> breaks_; // 每次推送建立缺测段起点索引，抽稀不能跨过缺测段连线。
     int rowCount_ = 1;
+    double rangeStart_ = 0;
     double distPerBin_ = 1;
     int valLo_ = 0; // 值轴量程（型号宪法给的），界恒等于它
     int valHi_ = 1;

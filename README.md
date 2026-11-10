@@ -1,5 +1,7 @@
 # ChartCore
 
+2026-11-10 用户定：所有采集卡的斜距等间隔，删除 `NonuniformWind2DView`/`NonuniformWind2DItem`、`NonuniformWindBarbItem` 及其 QML 外部类型登记，风羽 `Column` 不再带高度数组。`Wind2DItem`/`Wind2DView` 的创建配置新增必填 `rangeStart`（第 0 门斜距），刻度与悬停按 `RangeGate::rangeOf(k, rangeStart, gateSpacing)`；`DAQChartSpecification::make` 同步增加 `rangeStart`。`nonuniform` 专项改为 `wind`（均匀剖面、风羽、QML 装配与类型警告检查）。下文非均匀相关条目只作追溯。验证：build-current（相邻 Algorithm/UICore 源码覆盖）Release 零警告、CTest 3/3；缺少 `rangeStart` 的配置会被拒绝（smoke 先失败、补上后通过）。
+
 2026-10-30：激光器电流组追加 SD，电压组追加 PZT 偏移量，完整快照扩展为八值。缺任一字段仍整次拒绝，未知值仍用 NaN 占位，行对齐、历史和三图联动保持；不增加数据缓存或协议知识。Windows Release、公开头编译、qmllint 及 CTest 2/2 通过（94 项趋势检查），新增通道的单位、缺项拒绝、悬停和容量对齐均有覆盖。Direct3D11 演示截图确认四条电流、两条电压及图例，演示使用合成数据，没有连接实物。证据 build/{build,test,lint}-sd-pzt.log 与 build/sd-pzt-d3d11.png；仅本地提交，未推送，本轮未重跑 Linux。
 
 2026-10-29：单曲线也显示图例；独立接入固定 UICore `5d4ccc1`，包含统一上下展开及空列表处理的下拉控件。Windows Release 构建、公开头检查及 CTest 2/2 通过，已取消 UICore 本地覆盖并核对远端完整提交。

@@ -22,7 +22,7 @@ Item {
     }
     Wind2DView {
         anchors.fill: parent
-        specification: ({ rows: 4, gateSpacing: 60, windMin: -20, windMax: 20, cnrMin: -30, cnrMax: 40 })
+        specification: ({ rows: 4, rangeStart: 0, gateSpacing: 60, windMin: -20, windMax: 20, cnrMin: -30, cnrMax: 40 })
     }
 })QML", QUrl());
     std::unique_ptr<QObject> object(component.create());

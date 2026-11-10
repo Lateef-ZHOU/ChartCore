@@ -13,11 +13,11 @@ struct DAQChartSpecification
     static constexpr double kBarbWindowSec = 24.0 * 3600.0; // 风羽图的设计时间窗（秒）
     static constexpr double kBarbColumnSec = 20.0;          // 风羽图的名义列距（秒）
 
-    // 小规格表交 QML 装配；设备不拥有图表或显示缓存。
-    static QVariantMap make(int rows, int columns, double spacing,
+    // 小规格表交 QML 装配；设备不拥有图表或显示缓存。第 k 门斜距 = rangeStart + k·spacing。
+    static QVariantMap make(int rows, int columns, double rangeStart, double spacing,
                                           int windMin, int windMax, double powerMax)
     {
-        return {{"rows", rows}, {"columns", columns}, {"gateSpacing", spacing},
+        return {{"rows", rows}, {"columns", columns}, {"rangeStart", rangeStart}, {"gateSpacing", spacing},
                 {"windMin", windMin}, {"windMax", windMax}, {"powerMax", powerMax},
                 {"cnrMin", kPlt2dCnrMin}, {"cnrMax", kPlt2dCnrMax},
                 {"barbWindow", kBarbWindowSec}, {"barbColumn", kBarbColumnSec}};

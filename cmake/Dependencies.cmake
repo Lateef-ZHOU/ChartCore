@@ -4,7 +4,7 @@ include(FetchContent)
 if(NOT TARGET Lidar::Algorithm)
     FetchContent_Declare(lidar_algorithm
         GIT_REPOSITORY https://github.com/Lateef-ZHOU/Algorithm.git
-        GIT_TAG 3161796b7c5fa9231f0c16f094e281f3535336b4)
+        GIT_TAG a877748d660805cdb1244f30c44172caf08d72ff)
     FetchContent_MakeAvailable(lidar_algorithm)
 endif()
 if(NOT TARGET Lidar::UICore)
