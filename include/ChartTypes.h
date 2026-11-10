@@ -55,6 +55,14 @@ struct VerticalWindProfileQml
     QML_ANONYMOUS
 };
 
+// 功率谱（斜距 × 频率二维线性数组）：QML 只原样转交给功率谱图，不展开。
+struct LinearSpectrumQml
+{
+    Q_GADGET
+    QML_FOREIGN(LinearArray2D<double>)
+    QML_ANONYMOUS
+};
+
 // 逐门剖面（斜距线性轴 + 数值）：QML 只原样转交给径向风图，不展开。
 struct LinearSeriesQml
 {

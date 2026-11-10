@@ -2,15 +2,17 @@
 #include "SurfaceState.h"
 #include <optional>
 
-// 绘制层的数值入口。行主序：行 = 距离门，列 = 频点；维度由实例给定。
+// 绘制层的数值入口。行主序：行 = 距离门，列 = 频点；行列数须与实例网格一致，两条轴随帧给出。
 // 短帧（含空帧）补零，长帧只取前 rows*columns 项，绝不续用上一帧的尾部（用户定）。
-inline std::optional<PreparedSurface> prepareSurface(const QVector<double> &values, SurfaceGrid grid,
+inline std::optional<PreparedSurface> prepareSurface(const LinearArray2D<double> &values, SurfaceGrid grid,
                                                      double low, double high)
 {
-    if (grid.rows < 2 || grid.columns < 2 || !std::isfinite(low) || !std::isfinite(high) || high < low)
+    if (grid.rows < 2 || grid.columns < 2 || values.rows != grid.rows || values.columns != grid.columns
+        || !values.hasValidAxes() || !std::isfinite(low) || !std::isfinite(high) || high < low)
         return std::nullopt;
     const qsizetype count = grid.pointCount();
-    const auto valueAt = [&](qsizetype i) { return i < values.size() ? values[i] : 0.0; };
+    const auto size = static_cast<qsizetype>(values.size());
+    const auto valueAt = [&](qsizetype i) { return i < size ? values[static_cast<std::size_t>(i)] : 0.0; };
     const bool automatic = low == high;
     double minimum = valueAt(0), maximum = minimum;
     for (qsizetype i = 0; i < count; ++i) {
@@ -33,6 +35,7 @@ inline std::optional<PreparedSurface> prepareSurface(const QVector<double> &valu
     if (!std::isfinite(span) || span <= 0) return std::nullopt;
     PreparedSurface result;
     result.grid = grid;
+    result.axes = values.axes();
     result.zMin = low;
     result.zMax = high;
     result.heights.resize(count);

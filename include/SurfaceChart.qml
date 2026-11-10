@@ -8,6 +8,11 @@ Item {
     objectName: "surfaceController"
     required property int rows
     required property int columns
+    // 首帧前的初始轴（行 = 斜距 m、列 = 频率 MHz）；之后按每帧数据自带的轴。
+    required property real rowStart
+    required property real rowStep
+    required property real columnStart
+    required property real columnStep
     required property real maxPower
     readonly property real valLo: state.low
     readonly property real valHi: state.high
@@ -17,8 +22,8 @@ Item {
     QtObject {
         id: state
         objectName: "surfaceState"
-        // 原生 QVector<double> 在 var 中共享保存；不枚举、索引或改写它。
-        property var raw: []
+        // 原生二维线性数组在 var 中原样保存；不枚举、索引或改写它。首帧前为配置网格的空帧。
+        property var raw
         property real low: 0
         property real high: 0
         property int received: 0
@@ -52,10 +57,11 @@ Item {
     // 相机只使用现有显示数据；鼠标旋转、滚轮缩放也都由 SurfaceItem 处理。
     function resetCamera() { surface.resetCamera() }
     onPresentingChanged: presentLatest()
-    Component.onCompleted: { state.ready = true; presentLatest() }
+    Component.onCompleted: { state.raw = surface.blankFrame(); state.ready = true; presentLatest() }
     SurfaceItem {
         id: surface
         anchors.fill: parent
-        configuration: ({ rows: root.rows, columns: root.columns })
+        configuration: ({ rows: root.rows, columns: root.columns, rowStart: root.rowStart, rowStep: root.rowStep,
+            columnStart: root.columnStart, columnStep: root.columnStep })
     }
 }

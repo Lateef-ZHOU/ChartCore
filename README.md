@@ -1,5 +1,7 @@
 # ChartCore
 
+2026-11-10 用户定（二维线性数组）：功率谱曲面改收 `LinearArray2D<double>`（登记为 QML 不透明值），刻度按数据自带的轴标为“频率 (MHz)”“斜距 (m)”，取代 `d698067` 的距离门下标口径。`SurfaceItem`/`SurfaceChart` 创建配置新增必填的行、列起点与步长作为首帧前的初始轴，`blankFrame()` 给出空帧；`SurfaceView` 从规格表的 rangeStart/gateSpacing/freqStart/freqStep 取轴，`DAQChartSpecification::make` 改收网格。
+
 2026-11-10 用户定（波长与抽稀）：`ChartThinning::thinUniform` 改收 `LinearArray<T>`，个数取数组长度；径向风图常驻门格轴 `LinearArray<char>(0.5, 1, 门数)`（元素不用），风羽直接传风廓线的 `winds`。删除 20 亿隐式点检查（无法再以隐式网格表达），保留 600 组随机对照。
 
 2026-11-10 用户定（线性数组）：径向风图 `Wind2DItem.setData` 接收 Algorithm 的 `LinearArray<double>`（经 `LinearSeriesQml` 登记为 QML 不透明值，页面原样转交），门数、起点或门距与创建配置不符整帧拒收；风羽图历史直接借出 `VerticalWindProfileUnit`，层高度取 `winds.positionAt`，删除中间 `Column` 视图；刻度与悬停就地按 起点 + k·门距。`ChartThinning::thinUniform` 仍收起点、步长与个数，因为它也用于不持有数组的隐式网格（门格、20 亿点检查）。验证：build-current Release 零警告，CTest 3/3（含错网格拒收、QML 转交）。

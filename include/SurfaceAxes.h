@@ -145,16 +145,18 @@ inline QVector<double> ticks(double low, double high, int target)
         if (value >= high) break;
         if (value > low) values.append(value);
     }
-    values.append(high); // 末档是下标上界，例如 199，不把维度 200 画成最后一格。
+    values.append(high); // 末档是末格点的位置，不把网格外的一格画成最后一档。
     return values;
 }
 
-inline Scene makeScene(const Projection &projection, SurfaceGrid grid, double zMin, double zMax, const QFont &font)
+// 两条水平轴按网格的物理坐标标注：列 = 频率（MHz），行 = 斜距（m），端点为首末格点的位置。
+inline Scene makeScene(const Projection &projection, const LinearArray2D<double> &grid, double zMin, double zMax,
+                       const QFont &font)
 {
     Scene scene;
     scene.axes = placeAxes(projection);
-    scene.scales = {{QStringLiteral("频点 (下标)"), 0, static_cast<double>(grid.columns - 1), {}},
-                    {QStringLiteral("距离门 (下标)"), 0, static_cast<double>(grid.rows - 1), {}},
+    scene.scales = {{QStringLiteral("频率 (MHz)"), grid.columnPosition(0), grid.columnPosition(grid.columns - 1), {}},
+                    {QStringLiteral("斜距 (m)"), grid.rowPosition(0), grid.rowPosition(grid.rows - 1), {}},
                     {QStringLiteral("功率谱值"), zMin, zMax, {}}};
     const QFontMetricsF metrics(font);
     QVector<Label> endpoints, interiors, titles;
@@ -212,10 +214,10 @@ inline Frame projectScene(const Scene &scene, const Projection &projection)
     return frame;
 }
 
-inline Frame layout(const SurfaceCamera &camera, const QSizeF &size, SurfaceGrid grid,
+inline Frame layout(const SurfaceCamera &camera, const QSizeF &size, const LinearArray2D<double> &grid,
                     double zMin, double zMax, const QFont &font)
 {
-    if (size.width() < 1 || size.height() < 1 || grid.rows < 2 || grid.columns < 2) return {};
+    if (size.width() < 1 || size.height() < 1 || grid.rows < 2 || grid.columns < 2 || !grid.hasValidAxes()) return {};
     const Projection projection(camera, size);
     return projectScene(makeScene(projection, grid, zMin, zMax, font), projection);
 }
@@ -236,10 +238,10 @@ public:
     }
     void setView(const SurfaceCamera &camera, const PreparedSurface &surface, const QSizeF &size)
     {
-        if (camera_.view() == camera.view() && camera_.zoom == camera.zoom && grid_ == surface.grid
+        if (camera_.view() == camera.view() && camera_.zoom == camera.zoom && grid_.sameAxes(surface.axes)
             && low_ == surface.zMin && high_ == surface.zMax && size == this->size()) return;
         camera_ = camera;
-        grid_ = surface.grid;
+        grid_ = surface.axes;
         low_ = surface.zMin;
         high_ = surface.zMax;
         setSize(size);
@@ -272,7 +274,7 @@ private:
         update();
     }
     SurfaceCamera camera_;
-    SurfaceGrid grid_;
+    LinearArray2D<double> grid_;
     double low_ = 0, high_ = 0;
     QFont font_;
     QColor foreground_, background_;

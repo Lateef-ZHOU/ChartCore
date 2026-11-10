@@ -15,6 +15,10 @@ ColumnLayout {
         Layout.fillHeight: true
         rows: root.specification.rows
         columns: root.specification.columns
+        rowStart: root.specification.rangeStart
+        rowStep: root.specification.gateSpacing
+        columnStart: root.specification.freqStart
+        columnStep: root.specification.freqStep
         maxPower: root.specification.powerMax
     }
     FieldStrip {

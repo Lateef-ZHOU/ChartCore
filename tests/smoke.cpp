@@ -15,7 +15,7 @@ int main(int argc, char **argv)
 import Lidar.Charts
 Item {
     width: 800; height: 600
-    SurfaceChart { rows: 4; columns: 3; maxPower: 100; anchors.fill: parent }
+    SurfaceChart { rows: 4; columns: 3; rowStart: 0; rowStep: 60; columnStart: 0; columnStep: 1; maxPower: 100; anchors.fill: parent }
     AngleChartItem {
         anchors.fill: parent
         configuration: ({ windowSeconds: 120, intervalSeconds: 0.01 })
