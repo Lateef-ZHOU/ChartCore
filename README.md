@@ -1,5 +1,9 @@
 # ChartCore
 
+2026-11-12：适配 Algorithm 的 optional<Vec3> 风层。风羽只在层值存在时读取 ENU 分量，缺测层跳过，有效静风仍绘制静风符号；整帧历史、抽稀和 QML 接口不变。
+
+本轮验证：本地 Algorithm/UICore 源码覆盖，MSVC Release 构建、公开头编译与 CTest 3/3 通过，包含缺测风层无图元、有效静风保留图元的专项断言。
+
 2026-11-10 用户定（二维线性数组）：功率谱曲面改收 `LinearArray2D<double>`（登记为 QML 不透明值），刻度按数据自带的轴标为“频率 (MHz)”“斜距 (m)”，取代 `d698067` 的距离门下标口径。`SurfaceItem`/`SurfaceChart` 创建配置新增必填的行、列起点与步长作为首帧前的初始轴，`blankFrame()` 给出空帧；`SurfaceView` 从规格表的 rangeStart/gateSpacing/freqStart/freqStep 取轴，`DAQChartSpecification::make` 改收网格。
 
 2026-11-10 用户定（波长与抽稀）：`ChartThinning::thinUniform` 改收 `LinearArray<T>`，个数取数组长度；径向风图常驻门格轴 `LinearArray<char>(0.5, 1, 门数)`（元素不用），风羽直接传风廓线的 `winds`。删除 20 亿隐式点检查（无法再以隐式网格表达），保留 600 组随机对照。

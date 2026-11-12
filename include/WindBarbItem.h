@@ -210,12 +210,12 @@ protected:
                 {
                     const auto &wind = profile.winds[k];
                     if (!wind) continue; // 桶里的首门缺测：这一格不画，不往后找。
-                    const double s = std::hypot(wind.x(), wind.y());
+                    const double s = std::hypot(wind->x(), wind->y());
                     if (!std::isfinite(s)) continue;
                     const double mid = (std::floor(profile.winds.positionAt(k) / binM) + 0.5) * binM;
                     if (mid + halfY < yAxis_.lo || mid - halfY > yAxis_.hi)
                         continue;
-                    visit(x, yAxis_.toPixel(mid, plot.bottom(), plot.top()), s, wind);
+                    visit(x, yAxis_.toPixel(mid, plot.bottom(), plot.top()), s, *wind);
                 }
             }
         };

@@ -1,3 +1,4 @@
+#include <optional>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -53,6 +54,19 @@ public:
     using WindBarbItem::WindBarbItem;
     using WindBarbItem::columnCount;
     using WindBarbItem::columnAt;
+    std::vector<QSGGeometry::ColoredPoint2D> geometry(const std::optional<LinAlg::Vec3> &wind)
+    {
+        const RxTime at(std::chrono::seconds(1000));
+        appendColumn(std::make_shared<const VerticalWindProfileUnit>(VerticalWindProfileUnit{
+            at, LinearArray<std::optional<LinAlg::Vec3>>(50, 60, {wind})}));
+        xAxis_.lo = 990; xAxis_.hi = 1010;
+        yAxis_.lo = 0; yAxis_.hi = 100;
+        QSGNode root;
+        drawMarks(&root, 0, plotRect());
+        const auto *data = static_cast<QSGGeometryNode *>(root.firstChild())->geometry();
+        const auto *vertices = data->vertexDataAsColoredPoint2D();
+        return {vertices, vertices + data->vertexCount()};
+    }
 };
 class Source : public QObject
 {
@@ -113,7 +127,7 @@ static QVariantMap barbConfig()
 static VerticalWindProfilePtr frame(RxTime at, double startHeight)
 {
     return std::make_shared<const VerticalWindProfileUnit>(VerticalWindProfileUnit{at,
-        LinearArray<LinAlg::Vec3>(startHeight, 15.0, {{2, 1, 0}, {3, 2, 0}, {4, 3, 0}})});
+        LinearArray<std::optional<LinAlg::Vec3>>(startHeight, 15.0, {LinAlg::Vec3{2, 1, 0}, LinAlg::Vec3{3, 2, 0}, LinAlg::Vec3{4, 3, 0}})});
 }
 
 int main(int argc, char **argv)
@@ -157,13 +171,26 @@ int main(int argc, char **argv)
               "history shares whole immutable frame, no array copies");
         first.reset();
         item.appendColumn(std::make_shared<const VerticalWindProfileUnit>(
-            VerticalWindProfileUnit{now, LinearArray<LinAlg::Vec3>(0.0, 0.0, {{1, 2, 3}})}));
+            VerticalWindProfileUnit{now, LinearArray<std::optional<LinAlg::Vec3>>(0.0, 0.0, {LinAlg::Vec3{1, 2, 3}})}));
         check(item.columnCount() == 1, "invalid height grid rejected before ring changes");
         for (int i = 1; i <= 4; ++i)
             item.appendColumn(frame(now + std::chrono::seconds(i), i * 100));
         check(item.columnCount() == 3 && weak.expired(), "ring capacity enforced and oldest whole frame released");
         check(item.columnAt(0).winds.positionAt(0) == 200 && item.columnAt(2).winds.positionAt(2) == 430,
               "wrapped ring preserves start and step heights");
+    }
+    {
+        const auto geometry = [](const std::optional<LinAlg::Vec3> &wind) {
+            BarbProbe item(QVariantMap{{"heightBins", 1}, {"windowSeconds", 20},
+                {"columnSeconds", 1}, {"maxHeight", 100}});
+            item.setSize({400, 400});
+            return item.geometry(wind);
+        };
+        const auto missing = geometry(std::nullopt), calm = geometry(LinAlg::Vec3::Zeros());
+        check(missing.size() == 3 && missing[0].a == 0, "missing optional layer draws no wind glyph");
+        check(calm.size() == 12 && std::all_of(calm.begin(), calm.end(), [](const auto &v) {
+            return std::isfinite(v.x) && std::isfinite(v.y);
+        }), "present zero wind retains finite calm glyph");
     }
     Source source;
     qRegisterMetaType<VerticalWindProfilePtr>();
@@ -211,10 +238,10 @@ Window {
     check(wind->hover() && wind->hover()->text.contains("45 m") && wind->hover()->text.contains("-2.000"),
           "QML forwards values onto start + k x spacing gates");
     for (int i = 0; i < 90; i += 5) {
-        std::vector<LinAlg::Vec3> winds;
-        for (int k = 0; k < 8; ++k) winds.emplace_back(3 + k / 5.0, 2 + i / 10.0, 0);
+        std::vector<std::optional<LinAlg::Vec3>> winds;
+        for (int k = 0; k < 8; ++k) winds.emplace_back(LinAlg::Vec3(3 + k / 5.0, 2 + i / 10.0, 0));
         Q_EMIT source.column(std::make_shared<const VerticalWindProfileUnit>(VerticalWindProfileUnit{
-            now - std::chrono::seconds(90 - i), LinearArray<LinAlg::Vec3>(0.0, 7.5, std::move(winds))}));
+            now - std::chrono::seconds(90 - i), LinearArray<std::optional<LinAlg::Vec3>>(0.0, 7.5, std::move(winds))}));
     }
     check(warnings == 0, "QML forwards typed immutable whole frame without type warnings");
     wait(200);
