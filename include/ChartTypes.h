@@ -42,7 +42,7 @@ public:
     Q_INVOKABLE QVariantMap gimbalAngles(double azimuth, double elevation) const
     {
         const auto pose = PanTiltModel::fromOrientation(
-            toOrientation().inverse() * WorldModel(azimuth, elevation).toOrientation());
+            toOrientation().inverseRotation() * WorldModel(azimuth, elevation).toOrientation());
         return {{"pan", pose.pan()}, {"tilt", pose.tilt()}};
     }
 };

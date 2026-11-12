@@ -1,5 +1,9 @@
 # ChartCore
 
+2026-11-12：QML 世界角转换适配 Algorithm 的 `SO3::inverseRotation()`，坐标换算和页面接口不变。
+
+本轮改名验证：使用本地配套依赖，MSVC Release 增量构建及 CTest 3/3 通过。
+
 2026-11-12：适配 Algorithm 的 optional<Vec3> 风层。风羽只在层值存在时读取 ENU 分量，缺测层跳过，有效静风仍绘制静风符号；整帧历史、抽稀和 QML 接口不变。
 
 本轮验证：本地 Algorithm/UICore 源码覆盖，MSVC Release 构建、公开头编译与 CTest 3/3 通过，包含缺测风层无图元、有效静风保留图元的专项断言。
