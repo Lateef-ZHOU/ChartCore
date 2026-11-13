@@ -511,5 +511,5 @@ protected:
 private:
     using History = WallClockHistory<std::shared_ptr<const Frame>,
         [](const std::shared_ptr<const Frame> &profile) { return profile->at; }>;
-    std::unique_ptr<History> history_ = std::make_unique<History>(1);
+    std::unique_ptr<History> history_; // 构造期间由 configure → resetHistory 按实际容量分配。
 };
