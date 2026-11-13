@@ -105,8 +105,8 @@ public:
         dataChanged();
     }
 
-    // [主] 复制固定窗口内的世界指向值。第一项覆盖 begin，end 之后的回报不参与。
-    // 不完整/无效历史返回空；相同指向合并，不在设备里另存最新角度。
+    // [主] 复制与历史相交的世界指向窗口；有 begin 前值则保留，end 之后的回报不参与。
+    // 无交集/反向窗口/无效姿态返回空；完整覆盖由采样业务判断，相同指向合并。
     Q_INVOKABLE [[nodiscard]] WorldPoseHistory worldHistory(const RxTime begin, const RxTime end) const
     {
         const auto window = times_.extract(begin, end);

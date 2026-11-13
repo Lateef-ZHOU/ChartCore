@@ -23,7 +23,11 @@ int main(int argc, char **argv)
         check(wrapped[i].first == time(static_cast<int>(i) + 2), "exact original timestamp");
         check(wrapped[i].second.azimuth() == (i + 2) * 10, "timestamp and angle stay aligned after overwrite");
     }
-    check(chart.worldHistory(time(1), time(4)).empty(), "missing coverage rejected");
+    const auto partial = chart.worldHistory(time(1), time(4));
+    check(partial.size() == 3 && partial.front().first == time(2)
+          && partial.front().second.azimuth() == 20, "partial overlap starts at first available pose");
+    check(chart.worldHistory(time(0), time(1)).empty() && chart.worldHistory(time(5), time(6)).empty(),
+          "disjoint angle windows rejected");
     const auto instant = chart.worldHistory(time(3), time(3));
     check(instant.size() == 1 && instant.front().second.azimuth() == 30, "closed instant window");
     chart.append(time(5), 0, 0, 40, 30);
