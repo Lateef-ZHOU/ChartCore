@@ -1,4 +1,5 @@
 #pragma once
+#include <memory>
 #include <QVariantMap>
 #include <QtQml/qqmlinfo.h>
 #include <QtQml/qqml.h>
@@ -84,7 +85,7 @@ public:
     Q_INVOKABLE void append(const RxTime at, const double pan, const double tilt, const double azimuth, const double elevation)
     {
         // 时间未入环时四条曲线也不追加，保持逐项对应和原始时间精度。
-        if (!times_.append(at))
+        if (!times_->append(at))
             return;
         const double tSec = std::chrono::duration<double>(at.time_since_epoch()).count();
         const std::array<double, kCurveCount> values{pan, tilt, azimuth, elevation};
@@ -109,10 +110,10 @@ public:
     // 无交集/反向窗口/无效姿态返回空；完整覆盖由采样业务判断，相同指向合并。
     Q_INVOKABLE [[nodiscard]] WorldPoseHistory worldHistory(const RxTime begin, const RxTime end) const
     {
-        const auto window = times_.extract(begin, end);
+        const auto window = times_->extract(begin, end);
         WorldPoseHistory result;
         for (auto it = window.begin(); it != window.end(); ++it) {
-            const auto index = it - times_.begin();
+            const auto index = it - times_->begin();
             const double azimuth = series_[2].points[index].y();
             const double elevation = series_[3].points[index].y();
             if (!std::isfinite(azimuth) || !std::isfinite(elevation)) return {};
@@ -188,8 +189,8 @@ private:
         intervalSeconds_ = interval;
         historySeconds_ = history;
         kMaxPoints = static_cast<int>(capacity);
-        auto resized = decltype(times_)(static_cast<std::size_t>(kMaxPoints));
-        for (const auto at : times_) resized.append(at);
+        auto resized = std::make_unique<WallClockHistory<RxTime, std::identity{}>>(static_cast<std::size_t>(kMaxPoints));
+        for (const auto at : *times_) resized->append(at);
         times_ = std::move(resized);
         // 创建期再次配置时也保留已有点，并维持时间环与曲线的下标对应。
         for (auto &curve : series_)
@@ -198,7 +199,8 @@ private:
     }
     const QList<Series> &series() const override { return series_; }
     QList<Series> series_;
-    WallClockHistory<RxTime, std::identity{}> times_{1}; // 与四条曲线同进同删；角度直接读曲线。
+    std::unique_ptr<WallClockHistory<RxTime, std::identity{}>> times_ =
+        std::make_unique<WallClockHistory<RxTime, std::identity{}>>(1); // 与四条曲线同进同删；角度直接读曲线。
     int kMaxPoints = 0;
     double intervalSeconds_ = 0;
     double historySeconds_ = 0;

@@ -238,14 +238,14 @@ public:
     }
     void setView(const SurfaceCamera &camera, const PreparedSurface &surface, const QSizeF &size)
     {
-        if (camera_.view() == camera.view() && camera_.zoom == camera.zoom && grid_.sameAxes(surface.axes)
+        if (camera_.view() == camera.view() && camera_.zoom == camera.zoom && grid_->sameAxes(*surface.axes)
             && low_ == surface.zMin && high_ == surface.zMax && size == this->size()) return;
         camera_ = camera;
         grid_ = surface.axes;
         low_ = surface.zMin;
         high_ = surface.zMax;
         setSize(size);
-        frame_ = SurfaceAxes::layout(camera_, size, grid_, low_, high_, font_);
+        frame_ = SurfaceAxes::layout(camera_, size, *grid_, low_, high_, font_);
         update();
     }
     const SurfaceAxes::Frame &frame() const { return frame_; }
@@ -274,7 +274,7 @@ private:
         update();
     }
     SurfaceCamera camera_;
-    LinearArray2D<double> grid_;
+    LinearSpectrumPtr grid_ = std::make_shared<const LinearArray2D<double>>();
     double low_ = 0, high_ = 0;
     QFont font_;
     QColor foreground_, background_;

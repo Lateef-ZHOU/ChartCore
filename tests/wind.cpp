@@ -58,8 +58,7 @@ public:
     std::vector<QSGGeometry::ColoredPoint2D> geometry(const std::optional<LinAlg::Vec3> &wind)
     {
         const RxTime at(std::chrono::seconds(1000));
-        appendColumn(shareWindProfile(std::make_shared<const WindField::Frame>(WindField::Frame{
-            at, LinearArray<std::optional<LinAlg::Vec3>>(50, 60, {wind})})));
+        appendColumn(shareWindProfile(std::make_shared<const WindField::Frame>(at, 50, 60, std::vector<std::optional<LinAlg::Vec3>>{wind})));
         xAxis_.lo = 990; xAxis_.hi = 1010;
         yAxis_.lo = 0; yAxis_.hi = 100;
         QSGNode root;
@@ -73,7 +72,7 @@ class Source : public QObject
 {
     Q_OBJECT
 Q_SIGNALS:
-    void profile(LinearArray<double> values);
+    void profile(LinearSeriesPtr values);
     void column(VerticalWindProfilePtr frame);
 };
 
@@ -127,8 +126,7 @@ static QVariantMap barbConfig()
 }
 static VerticalWindProfilePtr frame(RxTime at, double startHeight)
 {
-    return shareWindProfile(std::make_shared<const WindField::Frame>(WindField::Frame{at,
-        LinearArray<std::optional<LinAlg::Vec3>>(startHeight, 15.0, {LinAlg::Vec3{2, 1, 0}, LinAlg::Vec3{3, 2, 0}, LinAlg::Vec3{4, 3, 0}})}));
+    return shareWindProfile(std::make_shared<const WindField::Frame>(at, startHeight, 15.0, std::vector<std::optional<LinAlg::Vec3>>{LinAlg::Vec3{2, 1, 0}, LinAlg::Vec3{3, 2, 0}, LinAlg::Vec3{4, 3, 0}}));
 }
 
 int main(int argc, char **argv)
@@ -143,9 +141,9 @@ int main(int argc, char **argv)
     {
         UniformProbe item(profileConfig(0));
         item.setSize({600, 200});
-        LinearArray<double> values(0, 60, std::vector<double>(1000, 1));
-        values[100] = nan; values[101] = nan;
-        item.setData(LinearArray<double>(0, 30, values));
+        auto values = std::make_shared<LinearArray<double>>(0, 60, std::vector<double>(1000, 1));
+        (*values)[100] = nan; (*values)[101] = nan;
+        item.setData(std::make_shared<const LinearArray<double>>(0, 30, std::vector<double>(values->begin(), values->end())));
         item.applyHover(100.5);
         check(item.hover()->text.contains("0.000"), "data on another grid rejected");
         item.setData(values);
@@ -158,7 +156,7 @@ int main(int argc, char **argv)
         check(item.configuration().value("rangeStart").toDouble() == 0, "range start is part of the creation configuration");
         UniformProbe shifted(profileConfig(30));
         shifted.setSize({600, 200});
-        shifted.setData(LinearArray<double>(30, 60, values));
+        shifted.setData(std::make_shared<const LinearArray<double>>(30, 60, std::vector<double>(values->begin(), values->end())));
         shifted.applyHover(2.5);
         check(shifted.hover()->text.contains("150 m"), "explicit range start shifts every gate");
     }
@@ -171,8 +169,7 @@ int main(int argc, char **argv)
         check(item.columnCount() == 1 && item.columnAt(0).winds.data() == first->winds.data(),
               "history shares whole immutable frame, no array copies");
         first.reset();
-        item.appendColumn(shareWindProfile(std::make_shared<const WindField::Frame>(
-            WindField::Frame{now, LinearArray<std::optional<LinAlg::Vec3>>(0.0, 0.0, {LinAlg::Vec3{1, 2, 3}})})));
+        item.appendColumn(shareWindProfile(std::make_shared<const WindField::Frame>(now, 0.0, 0.0, std::vector<std::optional<LinAlg::Vec3>>{LinAlg::Vec3{1, 2, 3}})));
         check(item.columnCount() == 1, "invalid height grid rejected before ring changes");
         for (int i = 1; i <= 4; ++i)
             item.appendColumn(frame(now + std::chrono::seconds(i), i * 100));
@@ -242,15 +239,14 @@ Window {
     auto *cnr = root->findChild<Wind2DItem *>("cnr");
     auto *barbs = root->findChild<WindBarbItem *>("barbs");
     check(window && wind && cnr && barbs, "QML registered types assemble");
-    Q_EMIT source.profile(LinearArray<double>(0, 15, {1, 3, 5, -2, 6, 12, 8, 4}));
+    Q_EMIT source.profile(std::make_shared<const LinearArray<double>>(0, 15, std::vector<double>{1, 3, 5, -2, 6, 12, 8, 4}));
     wind->applyHover(3.5);
     check(wind->hover() && wind->hover()->text.contains("45 m") && wind->hover()->text.contains("-2.000"),
           "QML forwards values onto start + k x spacing gates");
     for (int i = 0; i < 90; i += 5) {
         std::vector<std::optional<LinAlg::Vec3>> winds;
         for (int k = 0; k < 8; ++k) winds.emplace_back(LinAlg::Vec3(3 + k / 5.0, 2 + i / 10.0, 0));
-        Q_EMIT source.column(shareWindProfile(std::make_shared<const WindField::Frame>(WindField::Frame{
-            now - std::chrono::seconds(90 - i), LinearArray<std::optional<LinAlg::Vec3>>(0.0, 7.5, std::move(winds))})));
+        Q_EMIT source.column(shareWindProfile(std::make_shared<const WindField::Frame>(now - std::chrono::seconds(90 - i), 0.0, 7.5, std::move(winds))));
     }
     check(warnings == 0, "QML forwards typed immutable whole frame without type warnings");
     wait(200);

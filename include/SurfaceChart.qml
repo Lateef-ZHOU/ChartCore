@@ -22,7 +22,7 @@ Item {
     QtObject {
         id: state
         objectName: "surfaceState"
-        // 原生二维线性数组在 var 中原样保存；不枚举、索引或改写它。首帧前为配置网格的空帧。
+        // 原生二维线性数组的只读共享份额在 var 中原样保存；不枚举、索引或改写它。首帧前为配置网格的空帧。
         property var raw
         property real low: 0
         property real high: 0

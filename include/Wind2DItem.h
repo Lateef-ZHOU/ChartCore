@@ -1,4 +1,5 @@
 #pragma once
+#include <memory>
 #include <QVariantMap>
 #include <QtQml/qqmlinfo.h>
 #include <QtQml/qqml.h>
@@ -84,7 +85,7 @@ public:
             || high <= low)
             qFatal("Invalid wind profile configuration.");
         rowCount_ = rows;
-        gateCells_ = LinearArray<char>(0.5, 1.0, std::vector<char>(rows));
+        gateCells_ = std::make_unique<LinearArray<char>>(0.5, 1.0, std::vector<char>(rows));
         rangeStart_ = start;
         distPerBin_ = spacing;
         valLo_ = low;
@@ -106,8 +107,10 @@ public:
     // [主] 一帧数据到达：**原地只写值那一列**。
     // **网格不对整帧不收**：门数、起点或门距与创建配置不同就拒收；按短者截断的话，短帧会拼出
     // 一条新旧混杂的曲线。
-    Q_INVOKABLE void setData(const LinearArray<double> &data)
+    Q_INVOKABLE void setData(const LinearSeriesPtr &frame)
     {
+        if (!frame) return;
+        const auto &data = *frame;
         if (data.size() != static_cast<std::size_t>(rowCount_) || data.start != rangeStart_ || data.step != distPerBin_)
             return;
         QList<QPointF> &points = series_[0].points;
@@ -125,7 +128,7 @@ protected:
     // 斜距沿 Y 方向均匀。选点直接反算下标，缺测段索引在数据推送时记录一次。
     void thin(const QList<QPointF> &, const QRectF &, QList<int> &out) const override
     {
-        ChartThinning::thinUniform(gateCells_, yAxis_.lo, yAxis_.hi,
+        ChartThinning::thinUniform(*gateCells_, yAxis_.lo, yAxis_.hi,
                                    binY(yAxis_.span()), 2, out);
         for (int index : breaks_) out.append(index);
         std::sort(out.begin(), out.end());
@@ -176,7 +179,7 @@ private:
     QList<Series> series_;
     QList<int> breaks_; // 每次推送建立缺测段起点索引，抽稀不能跨过缺测段连线。
     int rowCount_ = 1;
-    LinearArray<char> gateCells_; // 视口门格轴：第 k 门格心 k+½；元素不用，只为抽稀给出轴与门数
+    std::unique_ptr<LinearArray<char>> gateCells_ = std::make_unique<LinearArray<char>>(); // 视口门格轴：第 k 门格心 k+½；元素不用，只为抽稀给出轴与门数
     double rangeStart_ = 0;
     double distPerBin_ = 1;
     int valLo_ = 0; // 值轴量程（型号宪法给的），界恒等于它

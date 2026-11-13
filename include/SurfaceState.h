@@ -31,7 +31,7 @@ struct PreparedSurface
     QVector<float> heights;
     quint64 revision = 0;
     SurfaceGrid grid;
-    LinearArray2D<double> axes; // 本帧两条物理轴（行 = 斜距 m、列 = 频率 MHz），只带网格不带元素
+    LinearSpectrumPtr axes = std::make_shared<const LinearArray2D<double>>(); // 本帧两条物理轴（行 = 斜距 m、列 = 频率 MHz），只带网格不带元素
     double zMin = 0, zMax = 1;
 };
 

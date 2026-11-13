@@ -1,4 +1,5 @@
 #pragma once
+#include <memory>
 #include "ChartTypes.h"
 #include <QVariantMap>
 #include <QtQml/qqmlinfo.h>
@@ -488,14 +489,15 @@ public:
         if (!profile || !profile->hasValidGrid()
             || profile->winds.size() < static_cast<std::size_t>(minimumLayers())) return;
         const auto at = profile->at;
-        if (!history_.append(std::move(profile))) return;
+        if (!history_->append(std::move(profile))) return;
         columnAccepted(at);
     }
 protected:
-    int columnCount() const override { return static_cast<int>(history_.size()); }
-    const WindProfileView &columnAt(int i) const override { return *history_.at(i); }
-    void resetHistory(std::size_t capacity) override { history_ = decltype(history_)(capacity); }
+    int columnCount() const override { return static_cast<int>(history_->size()); }
+    const WindProfileView &columnAt(int i) const override { return *history_->at(i); }
+    void resetHistory(std::size_t capacity) override { history_ = std::make_unique<History>(capacity); }
 private:
-    WallClockHistory<VerticalWindProfilePtr,
-        [](const VerticalWindProfilePtr &profile) { return profile->at; }> history_{1};
+    using History = WallClockHistory<VerticalWindProfilePtr,
+        [](const VerticalWindProfilePtr &profile) { return profile->at; }>;
+    std::unique_ptr<History> history_ = std::make_unique<History>(1);
 };

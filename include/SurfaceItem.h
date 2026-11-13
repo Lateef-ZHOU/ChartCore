@@ -247,8 +247,8 @@ public:
     // 创建期配置：QML 必填，组件完成后固定。
     QVariantMap configuration() const
     {
-        return {{"rows", axes_.rows}, {"columns", axes_.columns}, {"rowStart", axes_.rowStart}, {"rowStep", axes_.rowStep},
-                {"columnStart", axes_.columnStart}, {"columnStep", axes_.columnStep}};
+        return {{"rows", axes_->rows}, {"columns", axes_->columns}, {"rowStart", axes_->rowStart}, {"rowStep", axes_->rowStep},
+                {"columnStart", axes_->columnStart}, {"columnStep", axes_->columnStep}};
     }
     void setConfiguration(const QVariantMap &value)
     {
@@ -259,21 +259,22 @@ public:
         }
         const SurfaceGrid grid{value.value("rows").toInt(), value.value("columns").toInt()};
         // 首帧前的初始轴：行 = 斜距、列 = 频率；之后每帧按数据自带的轴更新刻度。
-        const LinearArray2D<double> axes(grid.rows, grid.columns, value.value("rowStart").toDouble(),
+        auto axes = std::make_shared<const LinearArray2D<double>>(grid.rows, grid.columns, value.value("rowStart").toDouble(),
                                          value.value("rowStep").toDouble(), value.value("columnStart").toDouble(),
                                          value.value("columnStep").toDouble());
         if (grid.rows < 2 || grid.columns < 2 || qint64(grid.rows) * grid.columns > std::numeric_limits<int>::max() / 6
-            || !value.value("rowStart").isValid() || !value.value("columnStart").isValid() || !axes.hasValidAxes())
+            || !value.value("rowStart").isValid() || !value.value("columnStart").isValid() || !axes->hasValidAxes())
             qFatal("Invalid surface grid.");
         grid_ = grid;
         axes_ = axes;
     }
 
     // 首帧前的空帧：只带配置的网格，显示时补零。
-    Q_INVOKABLE LinearArray2D<double> blankFrame() const { return axes_; }
-    Q_INVOKABLE bool setData(const LinearArray2D<double> &values, double low, double high)
+    Q_INVOKABLE LinearSpectrumPtr blankFrame() const { return axes_; }
+    Q_INVOKABLE bool setData(const LinearSpectrumPtr &values, double low, double high)
     {
-        auto next = prepareSurface(values, grid_, low, high);
+        if (!values) return false;
+        auto next = prepareSurface(*values, grid_, low, high);
         if (!next) return false; // 非有限值不进入 GPU，也不破坏上次有效显示。
         next->revision = surface_.revision + 1;
         surface_ = std::move(*next);
@@ -345,7 +346,7 @@ private:
         update();
     }
     SurfaceGrid grid_{2, 2};
-    LinearArray2D<double> axes_; // 配置给出的初始网格（不带元素）
+    LinearSpectrumPtr axes_ = std::make_shared<const LinearArray2D<double>>(); // 配置给出的初始网格（不带元素）
     SurfaceAxesItem *const axisItem_;
     PreparedSurface surface_;
     SurfaceCamera camera_;

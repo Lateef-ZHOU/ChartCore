@@ -59,7 +59,7 @@ struct VerticalWindProfileQml
 struct LinearSpectrumQml
 {
     Q_GADGET
-    QML_FOREIGN(LinearArray2D<double>)
+    QML_FOREIGN(LinearSpectrumPtr)
     QML_ANONYMOUS
 };
 
@@ -67,6 +67,6 @@ struct LinearSpectrumQml
 struct LinearSeriesQml
 {
     Q_GADGET
-    QML_FOREIGN(LinearArray<double>)
+    QML_FOREIGN(LinearSeriesPtr)
     QML_ANONYMOUS
 };
