@@ -178,6 +178,14 @@ int main(int argc, char **argv)
         check(item.columnCount() == 3 && weak.expired(), "ring capacity enforced and oldest whole frame released");
         check(item.columnAt(0).winds.positionAt(0) == 200 && item.columnAt(2).winds.positionAt(2) == 430,
               "wrapped ring preserves start and step heights");
+        item.appendColumn(frame(now + std::chrono::seconds(4), 900));
+        item.appendColumn(frame(now + std::chrono::seconds(3), 800));
+        check(item.columnCount() == 3 && item.columnAt(0).winds.positionAt(0) == 200
+              && item.columnAt(2).winds.positionAt(0) == 400,
+              "duplicate and older wind frames do not replace or evict accepted history");
+        item.appendColumn(frame(now + std::chrono::seconds(5), 500));
+        check(item.columnAt(0).winds.positionAt(0) == 300 && item.columnAt(2).winds.positionAt(0) == 500,
+              "wind history resumes above last accepted timestamp");
     }
     {
         const auto geometry = [](const std::optional<LinAlg::Vec3> &wind) {

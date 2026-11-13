@@ -83,9 +83,11 @@ public:
     // [主] 写入一个采样（°）；横轴使用 double 秒属于本绘图器的内部表示。
     Q_INVOKABLE void append(const RxTime at, const double pan, const double tilt, const double azimuth, const double elevation)
     {
+        // 时间未入环时四条曲线也不追加，保持逐项对应和原始时间精度。
+        if (!times_.append(at))
+            return;
         const double tSec = std::chrono::duration<double>(at.time_since_epoch()).count();
         const std::array<double, kCurveCount> values{pan, tilt, azimuth, elevation};
-        times_.append(at); // 保留原始时间精度，历史读口不从绘图的 double 横轴反算。
         for (int i = 0; i < kCurveCount; ++i)
             series_[i].points.append(QPointF(tSec, values[i]));
         noteLastX(tSec); // 横轴的锚跟着最新采样走
@@ -94,8 +96,7 @@ public:
         //   · 不拿墙钟当裁刀——tSec 源自 RxTime（system_clock），按时间裁的话墙钟向前跳一下，
         //     整扇窗的点会被一轮删光。
         // 环比窗长一成（QuickChartItem::kRingOverWindow）：按名义回显间隔，窗的最左侧不空；回显比名义快时最左侧露空、
-        // 慢时环里比窗更老的点看不到，都不是错。墙钟向后跳时新点的 x 小于旧点、序列不再单调，
-        // 那是拿墙钟当横轴的固有代价，与裁剪方式无关（SeriesChart::thin 见到不单调会原样全画）。
+        // 慢时环里比窗更老的点看不到，都不是错。重复/倒退时间在入环时拒绝，直到时间超过末条才恢复追加。
         // 四条同进同删，删几个只按第一条算一次（Qt 6 的 QList 从头删是 O(1)）。
         if (const int over = static_cast<int>(series_[0].points.size()) - kMaxPoints; over > 0) {
             for (int i = 0; i < kCurveCount; ++i)
@@ -105,7 +106,7 @@ public:
     }
 
     // [主] 复制固定窗口内的世界指向值。第一项覆盖 begin，end 之后的回报不参与。
-    // 不完整/乱序/无效历史返回空；相同指向合并，不在设备里另存最新角度。
+    // 不完整/无效历史返回空；相同指向合并，不在设备里另存最新角度。
     Q_INVOKABLE [[nodiscard]] WorldPoseHistory worldHistory(const RxTime begin, const RxTime end) const
     {
         const auto window = times_.extract(begin, end);

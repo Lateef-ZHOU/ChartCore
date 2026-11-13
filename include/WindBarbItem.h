@@ -488,7 +488,7 @@ public:
         if (!profile || !profile->hasValidGrid()
             || profile->winds.size() < static_cast<std::size_t>(minimumLayers())) return;
         const auto at = profile->at;
-        history_.append(std::move(profile));
+        if (!history_.append(std::move(profile))) return;
         columnAccepted(at);
     }
 protected:

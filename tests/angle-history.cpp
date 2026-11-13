@@ -30,12 +30,16 @@ int main(int argc, char **argv)
     check(chart.worldHistory(time(3), time(5)).size() == 2, "unchanged world pose coalesced");
     chart.append(time(5), 0, 0, 50, 30);
     const auto duplicate = chart.worldHistory(time(5), time(6));
-    check(duplicate.size() == 1 && duplicate.front().second.azimuth() == 50, "last equal-time pose anchors window");
+    check(duplicate.size() == 1 && duplicate.front().second.azimuth() == 40, "equal-time pose does not replace accepted sample");
     chart.append(time(4), 0, 0, 60, 30);
-    check(chart.worldHistory(time(5), time(6)).empty(), "clock rollback rejected");
+    const auto rollback = chart.worldHistory(time(5), time(6));
+    check(rollback.size() == 1 && rollback.front().second.azimuth() == 40, "clock rollback keeps accepted time and pose aligned");
     chart.append(time(6), 0, 0, 60, 30);
     chart.append(time(7), 0, 0, 70, 30);
-    check(chart.worldHistory(time(4), time(7)).size() == 2, "history recovers when rollback overwritten");
+    const auto resumed = chart.worldHistory(time(5), time(7));
+    check(resumed.size() == 3 && resumed[0].second.azimuth() == 40
+          && resumed[1].second.azimuth() == 60 && resumed[2].second.azimuth() == 70,
+          "history resumes above last accepted timestamp with aligned values");
     chart.append(time(8), 0, 0, std::numeric_limits<double>::quiet_NaN(), 30);
     check(chart.worldHistory(time(6), time(8)).empty(), "invalid pose rejects the sampling window");
     check(!chart.worldHistory(time(6), time(7)).empty(), "later invalid sample excluded");
