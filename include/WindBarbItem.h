@@ -7,19 +7,21 @@
 #include <QtQml/qqmlregistration.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <limits>
+#include <optional>
 #include <utility>
 #include <vector>
 #include <span>
 #include <ranges>
 #include <QColor>
-#include <QDateTime>
+#include <QList>
 #include <QObject>
 #include <QQuickItem>
 #include <QSGGeometryNode>
 #include <QSGVertexColorMaterial>
-#include <QVector>
 
 #include "DAQChannelSpec.h"
 #include "WallClockHistory.h"

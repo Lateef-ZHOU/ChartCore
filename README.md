@@ -1,3 +1,9 @@
+## 2026-11-14 风羽图直接依赖整理（用户定）
+
+WindBarbItem.h 删除无用的 QDateTime、QVector，直接包含 QList、chrono、cstddef、optional。整帧历史和只读共享份额传递不变。
+
+Windows/MSVC Release 增量构建及公开头独立编译通过，CTest 4/4；主程序增量构建和 8 秒离屏冒烟通过。本轮不推送。
+
 ## 2026-11-14 风羽历史初始化整理（用户定）
 
 WindBarbItem 构造时直接由 configure → resetHistory 按配置容量分配历史，删除随即被替换的容量 1 环。默认构造、显式配置及 QML 创建期配置仍走原校验路径；原帧份额、覆盖释放和绘制语义不变。
