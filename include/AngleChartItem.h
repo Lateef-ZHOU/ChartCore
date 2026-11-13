@@ -18,6 +18,7 @@
 #include "SeriesChart.h"
 #include "ChartTypes.h"
 #include "GimbalModel.h"
+#include "WallClockHistory.h"
 
 // ============================================================
 // AngleChartItem.h —— 云台角度图（横轴时间 / 纵轴角度）
@@ -97,25 +98,20 @@ public:
         // 那是拿墙钟当横轴的固有代价，与裁剪方式无关（SeriesChart::thin 见到不单调会原样全画）。
         // 四条同进同删，删几个只按第一条算一次（Qt 6 的 QList 从头删是 O(1)）。
         if (const int over = static_cast<int>(series_[0].points.size()) - kMaxPoints; over > 0) {
-            times_.remove(0, over);
             for (int i = 0; i < kCurveCount; ++i)
                 series_[i].points.remove(0, over);
         }
         dataChanged();
     }
 
-    // [主] 借出固定窗口内的世界指向值。第一项覆盖 begin，end 之后的回报不参与。
+    // [主] 复制固定窗口内的世界指向值。第一项覆盖 begin，end 之后的回报不参与。
     // 不完整/乱序/无效历史返回空；相同指向合并，不在设备里另存最新角度。
     Q_INVOKABLE [[nodiscard]] WorldPoseHistory worldHistory(const RxTime begin, const RxTime end) const
     {
-        if (end < begin || times_.isEmpty() || times_.first() > begin
-            || !std::is_sorted(times_.cbegin(), times_.cend())) return {};
-        auto first = std::upper_bound(times_.cbegin(), times_.cend(), begin);
-        if (first == times_.cbegin()) return {};
-        --first;
+        const auto window = times_.extract(begin, end);
         WorldPoseHistory result;
-        for (auto it = first; it != times_.cend() && *it <= end; ++it) {
-            const auto index = it - times_.cbegin();
+        for (auto it = window.begin(); it != window.end(); ++it) {
+            const auto index = it - times_.begin();
             const double azimuth = series_[2].points[index].y();
             const double elevation = series_[3].points[index].y();
             if (!std::isfinite(azimuth) || !std::isfinite(elevation)) return {};
@@ -191,11 +187,17 @@ private:
         intervalSeconds_ = interval;
         historySeconds_ = history;
         kMaxPoints = static_cast<int>(capacity);
+        auto resized = decltype(times_)(static_cast<std::size_t>(kMaxPoints));
+        for (const auto at : times_) resized.append(at);
+        times_ = std::move(resized);
+        // 创建期再次配置时也保留已有点，并维持时间环与曲线的下标对应。
+        for (auto &curve : series_)
+            if (const auto over = curve.points.size() - kMaxPoints; over > 0) curve.points.remove(0, over);
         initializeTimeWindow(window);
     }
     const QList<Series> &series() const override { return series_; }
     QList<Series> series_;
-    QList<RxTime> times_; // 与四条曲线同进同删；仅时间保留业务类型，角度直接读曲线。
+    WallClockHistory<RxTime, std::identity{}> times_{1}; // 与四条曲线同进同删；角度直接读曲线。
     int kMaxPoints = 0;
     double intervalSeconds_ = 0;
     double historySeconds_ = 0;

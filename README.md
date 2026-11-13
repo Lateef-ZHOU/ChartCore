@@ -1,5 +1,10 @@
 # ChartCore
 
+## 共享墙钟历史（2026-11-13 用户定）
+
+风羽整帧环和转台角度时间环改用 Algorithm 的 `WallClockHistory`，删除风廓线专用环。角度取数复用 `extract`，仍保持原始时间精度、窗口起点覆盖、闭区间终点、连续相同朝向合并及无效/乱序历史拒绝。四条角度曲线与时间环同步覆盖，绘制行为不变。风廓线类型从 `WindProfile.h` 引入，Qt 登记留在 ChartTypes。
+
+
 2026-11-12：QML 世界角转换适配 Algorithm 的 `SO3::inverseRotation()`，坐标换算和页面接口不变。
 
 本轮改名验证：使用本地配套依赖，MSVC Release 增量构建及 CTest 3/3 通过。
@@ -21,6 +26,8 @@
 2026-10-29：单曲线也显示图例；独立接入固定 UICore `5d4ccc1`，包含统一上下展开及空列表处理的下拉控件。Windows Release 构建、公开头检查及 CTest 2/2 通过，已取消 UICore 本地覆盖并核对远端完整提交。
 
 Qt Quick 二维图表与 QRhi 三维高度面，以及配套 QML 图窗。Windows / Linux，C++20，CMake ≥ 3.28。
+
+验证：MSVC Release 增量构建、公开头编译与 CTest 4/4 通过，包含 8 秒离屏绘图冒烟及新增 angle_history；覆盖环绕下标对齐、时间精度、去重、缺测、回拨和创建期容量重配。使用本地 Algorithm，未推送。
 
 ## 边界与依赖
 

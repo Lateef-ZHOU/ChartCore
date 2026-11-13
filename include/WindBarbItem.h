@@ -20,7 +20,8 @@
 #include <QSGVertexColorMaterial>
 #include <QVector>
 
-#include "VerticalWindProfile.h"
+#include "WindProfile.h"
+#include "WallClockHistory.h"
 #include "ChartThinning.h"
 #include "ChartTicks.h"    // clock / decimal
 #include "QuickChartItem.h"
@@ -493,7 +494,8 @@ public:
 protected:
     int columnCount() const override { return static_cast<int>(history_.size()); }
     const VerticalWindProfileUnit &columnAt(int i) const override { return *history_.at(i); }
-    void resetHistory(std::size_t capacity) override { history_ = VerticalWindProfileHistory(capacity); }
+    void resetHistory(std::size_t capacity) override { history_ = decltype(history_)(capacity); }
 private:
-    VerticalWindProfileHistory history_{1};
+    WallClockHistory<VerticalWindProfilePtr,
+        [](const VerticalWindProfilePtr &profile) { return profile->at; }> history_{1};
 };
