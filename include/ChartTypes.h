@@ -19,7 +19,7 @@ struct RxTimeQml
 struct WorldPoseHistoryQml
 {
     Q_GADGET
-    QML_FOREIGN(WorldPoseHistory)
+    QML_FOREIGN(WorldPoseHistoryPtr)
     QML_ANONYMOUS
 };
 

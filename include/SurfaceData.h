@@ -33,12 +33,10 @@ inline std::optional<PreparedSurface> prepareSurface(const LinearArray2D<double>
     }
     const double span = high - low;
     if (!std::isfinite(span) || span <= 0) return std::nullopt;
-    PreparedSurface result;
-    result.grid = grid;
-    result.axes = std::make_shared<const LinearArray2D<double>>(values.rows, values.columns,
-        values.rowStart, values.rowStep, values.columnStart, values.columnStep);
-    result.zMin = low;
-    result.zMax = high;
+    PreparedSurface result{.grid = grid,
+        .axes = std::make_shared<const LinearArray2D<double>>(values.rows, values.columns,
+            values.rowStart, values.rowStep, values.columnStart, values.columnStep),
+        .zMin = low, .zMax = high};
     result.heights.resize(count);
     for (qsizetype i = 0; i < count; ++i) {
         const double value = automatic ? valueAt(i) : std::clamp(valueAt(i), low, high);

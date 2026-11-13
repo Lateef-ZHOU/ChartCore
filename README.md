@@ -1,3 +1,9 @@
+## 2026-11-13 角度历史共享传输（用户定）
+
+AngleChartItem::worldHistory 返回 WorldPoseHistoryPtr。一次构建采样窗口，跨 QML 排队及 QVariant 取回只复制共享份额；原图窗销毁不影响已交出的快照。无交集/无效姿态返回空份额。时间窗口、合并相同朝向和完整覆盖由消费者判断的语义不变。
+
+prepareSurface 直接构造实际轴配置，跳过默认空轴分配后立即替换的步骤；保留默认空曲面行为及 double 到 float 的显示转换。module_smoke 验证排队保活、源图窗销毁、QML 取回同一数组地址及释放；angle_history 继续验证窗口边界。
+
 # ChartCore
 
 ## 共享墙钟历史（2026-11-13 用户定）

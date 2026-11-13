@@ -108,20 +108,20 @@ public:
 
     // [主] 复制与历史相交的世界指向窗口；有 begin 前值则保留，end 之后的回报不参与。
     // 无交集/反向窗口/无效姿态返回空；完整覆盖由采样业务判断，相同指向合并。
-    Q_INVOKABLE [[nodiscard]] WorldPoseHistory worldHistory(const RxTime begin, const RxTime end) const
+    Q_INVOKABLE [[nodiscard]] WorldPoseHistoryPtr worldHistory(const RxTime begin, const RxTime end) const
     {
         const auto window = times_->extract(begin, end);
-        WorldPoseHistory result;
+        auto result = std::make_shared<WorldPoseHistory>();
         for (auto it = window.begin(); it != window.end(); ++it) {
             const auto index = it - times_->begin();
             const double azimuth = series_[2].points[index].y();
             const double elevation = series_[3].points[index].y();
             if (!std::isfinite(azimuth) || !std::isfinite(elevation)) return {};
-            if (!result.empty() && result.back().second.azimuth() == azimuth
-                && result.back().second.elevation() == elevation) continue;
-            result.emplace_back(*it, WorldModel(azimuth, elevation));
+            if (!result->empty() && result->back().second.azimuth() == azimuth
+                && result->back().second.elevation() == elevation) continue;
+            result->emplace_back(*it, WorldModel(azimuth, elevation));
         }
-        return result;
+        return result->empty() ? nullptr : result;
     }
 
 protected:
