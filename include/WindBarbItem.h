@@ -119,7 +119,7 @@ public:
 protected:
     // 历史里的整帧只读借出，不保存第二份数据；层高度由 winds 的线性轴定位。
     virtual int columnCount() const = 0;
-    virtual const VerticalWindProfileUnit &columnAt(int i) const = 0;
+    virtual const WindProfileView &columnAt(int i) const = 0;
     virtual void resetHistory(std::size_t capacity) = 0;
     int minimumLayers() const { return heightBins_; }
     void columnAccepted(RxTime at)
@@ -206,7 +206,7 @@ protected:
             {
                 const auto &profile = columnAt(c);
                 const double x = xAxis_.toPixel((timeBinOf(timeAt(c)) + 0.5) * binSec, plot.left(), plot.right());
-                ChartThinning::thinUniform(profile.winds, yAxis_.lo, yAxis_.hi, binM, 1, gatePick_);
+                ChartThinning::thinUniform(profile.winds.start, profile.winds.step, static_cast<int>(profile.winds.size()), yAxis_.lo, yAxis_.hi, binM, 1, gatePick_);
                 for (const int k : gatePick_)
                 {
                     const auto &wind = profile.winds[k];
@@ -493,7 +493,7 @@ public:
     }
 protected:
     int columnCount() const override { return static_cast<int>(history_.size()); }
-    const VerticalWindProfileUnit &columnAt(int i) const override { return *history_.at(i); }
+    const WindProfileView &columnAt(int i) const override { return *history_.at(i); }
     void resetHistory(std::size_t capacity) override { history_ = decltype(history_)(capacity); }
 private:
     WallClockHistory<VerticalWindProfilePtr,

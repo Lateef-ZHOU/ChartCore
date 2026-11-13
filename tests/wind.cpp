@@ -1,3 +1,4 @@
+#include "WindField.h"
 #include <optional>
 #include <algorithm>
 #include <chrono>
@@ -57,8 +58,8 @@ public:
     std::vector<QSGGeometry::ColoredPoint2D> geometry(const std::optional<LinAlg::Vec3> &wind)
     {
         const RxTime at(std::chrono::seconds(1000));
-        appendColumn(std::make_shared<const VerticalWindProfileUnit>(VerticalWindProfileUnit{
-            at, LinearArray<std::optional<LinAlg::Vec3>>(50, 60, {wind})}));
+        appendColumn(shareWindProfile(std::make_shared<const WindField::Frame>(WindField::Frame{
+            at, LinearArray<std::optional<LinAlg::Vec3>>(50, 60, {wind})})));
         xAxis_.lo = 990; xAxis_.hi = 1010;
         yAxis_.lo = 0; yAxis_.hi = 100;
         QSGNode root;
@@ -126,8 +127,8 @@ static QVariantMap barbConfig()
 }
 static VerticalWindProfilePtr frame(RxTime at, double startHeight)
 {
-    return std::make_shared<const VerticalWindProfileUnit>(VerticalWindProfileUnit{at,
-        LinearArray<std::optional<LinAlg::Vec3>>(startHeight, 15.0, {LinAlg::Vec3{2, 1, 0}, LinAlg::Vec3{3, 2, 0}, LinAlg::Vec3{4, 3, 0}})});
+    return shareWindProfile(std::make_shared<const WindField::Frame>(WindField::Frame{at,
+        LinearArray<std::optional<LinAlg::Vec3>>(startHeight, 15.0, {LinAlg::Vec3{2, 1, 0}, LinAlg::Vec3{3, 2, 0}, LinAlg::Vec3{4, 3, 0}})}));
 }
 
 int main(int argc, char **argv)
@@ -165,13 +166,13 @@ int main(int argc, char **argv)
         BarbProbe item(barbConfig());
         item.setSize({800, 600});
         auto first = frame(now, 10);
-        std::weak_ptr<const VerticalWindProfileUnit> weak = first;
+        std::weak_ptr<const WindProfileView> weak = first;
         item.appendColumn(first);
         check(item.columnCount() == 1 && item.columnAt(0).winds.data() == first->winds.data(),
               "history shares whole immutable frame, no array copies");
         first.reset();
-        item.appendColumn(std::make_shared<const VerticalWindProfileUnit>(
-            VerticalWindProfileUnit{now, LinearArray<std::optional<LinAlg::Vec3>>(0.0, 0.0, {LinAlg::Vec3{1, 2, 3}})}));
+        item.appendColumn(shareWindProfile(std::make_shared<const WindField::Frame>(
+            WindField::Frame{now, LinearArray<std::optional<LinAlg::Vec3>>(0.0, 0.0, {LinAlg::Vec3{1, 2, 3}})})));
         check(item.columnCount() == 1, "invalid height grid rejected before ring changes");
         for (int i = 1; i <= 4; ++i)
             item.appendColumn(frame(now + std::chrono::seconds(i), i * 100));
@@ -248,8 +249,8 @@ Window {
     for (int i = 0; i < 90; i += 5) {
         std::vector<std::optional<LinAlg::Vec3>> winds;
         for (int k = 0; k < 8; ++k) winds.emplace_back(LinAlg::Vec3(3 + k / 5.0, 2 + i / 10.0, 0));
-        Q_EMIT source.column(std::make_shared<const VerticalWindProfileUnit>(VerticalWindProfileUnit{
-            now - std::chrono::seconds(90 - i), LinearArray<std::optional<LinAlg::Vec3>>(0.0, 7.5, std::move(winds))}));
+        Q_EMIT source.column(shareWindProfile(std::make_shared<const WindField::Frame>(WindField::Frame{
+            now - std::chrono::seconds(90 - i), LinearArray<std::optional<LinAlg::Vec3>>(0.0, 7.5, std::move(winds))})));
     }
     check(warnings == 0, "QML forwards typed immutable whole frame without type warnings");
     wait(200);
