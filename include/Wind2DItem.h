@@ -16,8 +16,8 @@
 #include <QString>
 #include <QVector>
 
-#include "LinearArray.h"
 #include "DAQFamily/DAQChannelSpec.h"
+#include "ChartThinning.h"
 #include <span>
 #include "ChartTicks.h"
 #include "SeriesChart.h"
@@ -87,7 +87,6 @@ public:
             || high <= low)
             qFatal("Invalid wind profile configuration.");
         rowCount_ = rows;
-        gateCells_ = std::make_unique<LinearArray<char>>(0.5, 1.0, std::vector<char>(rows));
         rangeStart_ = start;
         distPerBin_ = spacing;
         valLo_ = low;
@@ -132,7 +131,7 @@ protected:
     // 斜距沿 Y 方向均匀。选点直接反算下标，缺测段索引在数据推送时记录一次。
     void thin(const QList<QPointF> &, const QRectF &, QList<int> &out) const override
     {
-        ChartThinning::thinUniform(*gateCells_, yAxis_.lo, yAxis_.hi,
+        ChartThinning::thinUniform(0.5, 1.0, rowCount_, yAxis_.lo, yAxis_.hi,
                                    binY(yAxis_.span()), 2, out);
         for (int index : breaks_) out.append(index);
         std::sort(out.begin(), out.end());
@@ -183,7 +182,6 @@ private:
     QList<Series> series_;
     QList<int> breaks_; // 每次推送建立缺测段起点索引，抽稀不能跨过缺测段连线。
     int rowCount_ = 1;
-    std::unique_ptr<LinearArray<char>> gateCells_ = std::make_unique<LinearArray<char>>(); // 视口门格轴：第 k 门格心 k+½；元素不用，只为抽稀给出轴与门数
     double rangeStart_ = 0;
     double distPerBin_ = 1;
     int valLo_ = 0; // 值轴量程（型号宪法给的），界恒等于它

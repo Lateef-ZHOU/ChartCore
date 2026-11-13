@@ -168,7 +168,7 @@ static void thinning()
                 reference.push_back(indices.front());
                 if (perBin == 2 && indices.back() != indices.front()) reference.push_back(indices.back());
             }
-            ChartThinning::thinUniform(LinearArray<double>(start, step, positions), lo, hi, width, perBin, uniform);
+            ChartThinning::thinUniform(start, step, count, lo, hi, width, perBin, uniform);
             ChartThinning::thinIrregular(positions, lo, hi, width, perBin, irregular);
             check(uniform == reference, "uniform direct indices match physical buckets including negative/fractional edges");
             check(irregular == reference, "position-only irregular selection matches physical buckets");

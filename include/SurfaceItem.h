@@ -259,7 +259,7 @@ public:
             return;
         }
         const SurfaceGrid grid{value.value("rows").toInt(), value.value("columns").toInt()};
-        // 首帧前的初始轴：行 = 斜距、列 = 频率；之后每帧按数据自带的轴更新刻度。
+        // 创建时固定坐标轴：行 = 斜距、列 = 频率；收到谱时核对其 Spec 与配置一致。
         auto axes = std::make_shared<const LinearArray2D<double>>(grid.rows, grid.columns, value.value("rowStart").toDouble(),
                                          value.value("rowStep").toDouble(), value.value("columnStart").toDouble(),
                                          value.value("columnStep").toDouble());
