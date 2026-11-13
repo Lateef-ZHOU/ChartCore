@@ -1,3 +1,13 @@
+## 2026-11-14：静态功率谱、径向风与 CNR（用户定）
+
+功率谱和径向风/CNR 入口接收具体静态帧的只读份额，直到实际绘图才借用数值 span；不生成 LinearArray 传输副本。具体 Qt 绘图类型由型号注册，公共 QML 接收这些图实例。隐藏功率谱页只保留最新的共享通道元组，显示或量程改变时才准备 GPU 数据。
+
+功率谱创建轴配置只分配一次，显示快照共享它，不再逐帧重建轴。首帧前仍为零平面；径向风/CNR 仍有全部默认零点。QML 创建配置的规格核对保留，防止不同规格数组误接到图窗。LinearArray2D 目前仅作为功率谱创建坐标配置留用，不再承载采集帧；风羽历史与渲染算法保持。
+
+本轮仅本地联调，不推送；与配套 FamilyCore、ChartCore 及官邸源码一起使用。
+
+验证：Windows/MSVC Release 构建、公开头独立编译及 CTest 4/4 通过；覆盖具体静态帧的 QML 传递、隐藏页保活与替换释放、错误轴配置拒绝和径向风/CNR 初始读数。主程序原生 Windows/D3D11 八秒装配截图显示曲面正常；离屏平台不作为图形渲染结论。证据：build-current/static-frames*.log；主程序 build/static-frames-native*。
+
 ## 2026-11-14：只引用族模型目标（用户定）
 
 绘图使用的 DAQChannelSpec 与 GimbalModel 改从 FamilyCore 的 DAQFamily/GMBFamily 读取，链接 `Lidar::FamilyModels`。该 INTERFACE 目标传递 Algorithm，不引入 DeviceCore、完整 FamilyCore 或 OpenMP；UICore 原有 ResourcePhase 对 HandleCore 的依赖保持。

@@ -4,7 +4,6 @@
 #include <QVariantMap>
 #include <QtQml/qqmlregistration.h>
 #include "GMBFamily/GimbalModel.h"
-#include "LinearArray.h"
 
 // Qt 消费侧登记原类型；算法与设备核心不依赖 QML。
 using RxTime = std::chrono::system_clock::time_point;
@@ -45,20 +44,4 @@ public:
             toOrientation().inverseRotation() * WorldModel(azimuth, elevation).toOrientation());
         return {{"pan", pose.pan()}, {"tilt", pose.tilt()}};
     }
-};
-
-// 功率谱（斜距 × 频率二维线性数组）：QML 只原样转交给功率谱图，不展开。
-struct LinearSpectrumQml
-{
-    Q_GADGET
-    QML_FOREIGN(LinearSpectrumPtr)
-    QML_ANONYMOUS
-};
-
-// 逐门剖面（斜距线性轴 + 数值）：QML 只原样转交给径向风图，不展开。
-struct LinearSeriesQml
-{
-    Q_GADGET
-    QML_FOREIGN(LinearSeriesPtr)
-    QML_ANONYMOUS
 };

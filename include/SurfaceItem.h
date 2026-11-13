@@ -7,6 +7,7 @@
 #include "SurfaceState.h"
 #include "SurfaceAxes.h"
 #include "SurfaceData.h"
+#include "DAQFamily/DAQChannelSpec.h"
 #include <QColor>
 #include <QFile>
 #include <QMouseEvent>
@@ -269,12 +270,25 @@ public:
         axes_ = axes;
     }
 
-    // 首帧前的空帧：只带配置的网格，显示时补零。
-    Q_INVOKABLE LinearSpectrumPtr blankFrame() const { return axes_; }
-    Q_INVOKABLE bool setData(const LinearSpectrumPtr &values, double low, double high)
+    // 首帧前只生成显示零平面，不分配虚构的业务功率谱。
+    Q_INVOKABLE bool setEmptyData(double low, double high) { return setValues({}, low, high); }
+
+    template<DAQChannelSpec Spec>
+    bool setSpectrum(const std::shared_ptr<const Spectrum<Spec>> &values, double low, double high)
     {
         if (!values) return false;
-        auto next = prepareSurface(*values, grid_, low, high);
+        // QML 创建配置仍是运行期边界，不能将另一规格的数组按本图尺寸重排。
+        if (axes_->rows != Spec::rangeGateCount || axes_->columns != Spec::frequencyBinCount
+            || axes_->rowStart != Spec::rangeStartM || axes_->rowStep != Spec::rangeStepM
+            || axes_->columnStart != Spec::frequencyStartMHz || axes_->columnStep != Spec::frequencyStepMHz)
+            return false;
+        return setValues({values->begin(), values->size()}, low, high);
+    }
+private:
+    // 已到数值绘制边界，借用仅持续到本次调用结束；原帧由调用方保活。
+    bool setValues(std::span<const double> values, double low, double high)
+    {
+        auto next = prepareSurface(values, axes_, grid_, low, high);
         if (!next) return false; // 非有限值不进入 GPU，也不破坏上次有效显示。
         next->revision = surface_.revision + 1;
         surface_ = std::move(*next);
@@ -282,6 +296,7 @@ public:
         update();
         return true;
     }
+public:
     const PreparedSurface &surface() const { return surface_; }
     const SurfaceCamera &camera() const { return camera_; }
     QColor background() const { return background_; }

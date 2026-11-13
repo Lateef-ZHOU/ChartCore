@@ -1,14 +1,15 @@
 #pragma once
 #include "SurfaceState.h"
 #include <optional>
+#include <span>
 
-// 绘制层的数值入口。行主序：行 = 距离门，列 = 频点；行列数须与实例网格一致，两条轴随帧给出。
+// 绘制层的数值入口。行主序：行 = 距离门，列 = 频点；行列数须与实例网格一致，两条轴取创建配置，不再逐帧分配。
 // 短帧（含空帧）补零，长帧只取前 rows*columns 项，绝不续用上一帧的尾部（用户定）。
-inline std::optional<PreparedSurface> prepareSurface(const LinearArray2D<double> &values, SurfaceGrid grid,
+inline std::optional<PreparedSurface> prepareSurface(std::span<const double> values, const LinearSpectrumPtr &axes, SurfaceGrid grid,
                                                      double low, double high)
 {
-    if (grid.rows < 2 || grid.columns < 2 || values.rows != grid.rows || values.columns != grid.columns
-        || !values.hasValidAxes() || !std::isfinite(low) || !std::isfinite(high) || high < low)
+    if (grid.rows < 2 || grid.columns < 2 || axes->rows != grid.rows || axes->columns != grid.columns
+        || !axes->hasValidAxes() || !std::isfinite(low) || !std::isfinite(high) || high < low)
         return std::nullopt;
     const qsizetype count = grid.pointCount();
     const auto size = static_cast<qsizetype>(values.size());
@@ -34,8 +35,7 @@ inline std::optional<PreparedSurface> prepareSurface(const LinearArray2D<double>
     const double span = high - low;
     if (!std::isfinite(span) || span <= 0) return std::nullopt;
     PreparedSurface result{.grid = grid,
-        .axes = std::make_shared<const LinearArray2D<double>>(values.rows, values.columns,
-            values.rowStart, values.rowStep, values.columnStart, values.columnStep),
+        .axes = axes,
         .zMin = low, .zMax = high};
     result.heights.resize(count);
     for (qsizetype i = 0; i < count; ++i) {

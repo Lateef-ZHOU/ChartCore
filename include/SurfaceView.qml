@@ -6,11 +6,14 @@ import QtQuick.Layouts
 
 ColumnLayout {
     id: root
+    required property SurfaceItem plot
     required property var specification
+    readonly property var plotConfiguration: surface.plotConfiguration
     function updateSpectrum(values) { surface.updateSpectrum(values) }
     spacing: 4
     SurfaceChart {
         id: surface
+        plot: root.plot
         Layout.fillWidth: true
         Layout.fillHeight: true
         rows: root.specification.rows

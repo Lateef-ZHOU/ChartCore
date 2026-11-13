@@ -17,6 +17,8 @@
 #include <QVector>
 
 #include "LinearArray.h"
+#include "DAQFamily/DAQChannelSpec.h"
+#include <span>
 #include "ChartTicks.h"
 #include "SeriesChart.h"
 
@@ -33,7 +35,7 @@
 //
 // **纵轴是沿波束的斜距，不是高度**：本图画的是**单束**的逐门量，束是斜的。高度 = 斜距 ×
 // sin(高度角) 要知道束的朝向，而本图不认识朝向——那是风廓线的事（WindProfile）。
-// 第 k 门斜距 = 起点 + k·门距，起点与门距由创建配置给出；每帧数据是同一网格上的 LinearArray。
+// 第 k 门斜距 = 起点 + k·门距，起点与门距由创建配置给出；每帧数据保留通道 Spec。
 //
 // **纵轴的视口单位是门格**：第 k 门占 [k, k+1)，折线过格心 k+½；米只出现在刻度文字与悬停读数里
 // （见 ticksY / hoverProbe）。这只对斜距成立：门 → 斜距不随束的朝向变，所以每一帧都落在同一套
@@ -104,15 +106,17 @@ public:
         yAxis_.hi = rows;
     }
 
-    // [主] 一帧数据到达：**原地只写值那一列**。
-    // **网格不对整帧不收**：门数、起点或门距与创建配置不同就拒收；按短者截断的话，短帧会拼出
-    // 一条新旧混杂的曲线。
-    Q_INVOKABLE void setData(const LinearSeriesPtr &frame)
+    template<DAQChannelSpec Spec>
+    void setRadialWind(const std::shared_ptr<const RadialWind<Spec>> &frame)
+    { if (frame) setValues({frame->begin(), frame->size()}, Spec::rangeStartM, Spec::rangeStepM); }
+    template<DAQChannelSpec Spec>
+    void setCNR(const std::shared_ptr<const CNR<Spec>> &frame)
+    { if (frame) setValues({frame->begin(), frame->size()}, Spec::rangeStartM, Spec::rangeStepM); }
+private:
+    // 只有绘制时转为借用数值；配置由 QML 创建，仍须核对其与业务规格一致。
+    void setValues(std::span<const double> data, double start, double step)
     {
-        if (!frame) return;
-        const auto &data = *frame;
-        if (data.size() != static_cast<std::size_t>(rowCount_) || data.start != rangeStart_ || data.step != distPerBin_)
-            return;
+        if (data.size() != static_cast<std::size_t>(rowCount_) || start != rangeStart_ || step != distPerBin_) return;
         QList<QPointF> &points = series_[0].points;
         breaks_.clear();
         for (int k = 0; k < rowCount_; ++k)

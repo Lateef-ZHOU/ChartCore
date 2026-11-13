@@ -1,6 +1,6 @@
 #pragma once
 #include <QVariantMap>
-#include "LinearArray.h"
+#include "DAQFamily/DAQChannelSpec.h"
 
 // 型号交入尺寸与数据范围；公共绘图默认值不属于设备族能力。
 struct DAQChartSpecification
@@ -14,11 +14,12 @@ struct DAQChartSpecification
     static constexpr double kBarbWindowSec = 24.0 * 3600.0; // 风羽图的设计时间窗（秒）
     static constexpr double kBarbColumnSec = 20.0;          // 风羽图的名义列距（秒）
 
-    // 小规格表交 QML 装配；设备不拥有图表或显示缓存。grid 只取网格：行 = 斜距（m）、列 = 频率（MHz）。
-    static QVariantMap make(const LinearArray2D<double> &grid, int windMin, int windMax, double powerMax)
+    // 小规格表交 QML 装配；设备不拥有图表或显示缓存。Spec 提供静态网格：行 = 斜距（m）、列 = 频率（MHz）。
+    template<DAQChannelSpec Spec>
+    static QVariantMap make(int windMin, int windMax, double powerMax)
     {
-        return {{"rows", grid.rows}, {"columns", grid.columns}, {"rangeStart", grid.rowStart}, {"gateSpacing", grid.rowStep},
-                {"freqStart", grid.columnStart}, {"freqStep", grid.columnStep},
+        return {{"rows", Spec::rangeGateCount}, {"columns", Spec::frequencyBinCount}, {"rangeStart", Spec::rangeStartM}, {"gateSpacing", Spec::rangeStepM},
+                {"freqStart", Spec::frequencyStartMHz}, {"freqStep", Spec::frequencyStepMHz},
                 {"windMin", windMin}, {"windMax", windMax}, {"powerMax", powerMax},
                 {"cnrMin", kPlt2dCnrMin}, {"cnrMax", kPlt2dCnrMax},
                 {"barbWindow", kBarbWindowSec}, {"barbColumn", kBarbColumnSec}};

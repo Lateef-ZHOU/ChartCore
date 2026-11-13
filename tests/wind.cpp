@@ -111,11 +111,36 @@ public:
     using WindBarbItem::columnStart;
     using WindBarbItem::columnStep;
 };
+template<int Count, int Start, int Step> struct RadialSpec : FixedSpec {
+    static constexpr int rangeGateCount = Count;
+    static constexpr double rangeStartM = Start, rangeStepM = Step;
+};
+using QmlSpec = RadialSpec<8, 0, 15>;
+using QmlWind = std::shared_ptr<const RadialWind<QmlSpec>>;
+using QmlCnr = std::shared_ptr<const CNR<QmlSpec>>;
+class TestRadialPlot : public Wind2DItem {
+    Q_OBJECT
+public:
+    explicit TestRadialPlot(QQuickItem *parent = nullptr) : Wind2DItem(parent) {}
+    Q_INVOKABLE void setData(QmlWind value) { setRadialWind(value); }
+};
+class TestCnrPlot : public Wind2DItem {
+    Q_OBJECT
+public:
+    explicit TestCnrPlot(QQuickItem *parent = nullptr) : Wind2DItem(parent) {}
+    Q_INVOKABLE void setData(QmlCnr value) { setCNR(value); }
+};
+template<class Frame> auto filled(double value) {
+    auto frame = std::make_shared<Frame>();
+    std::fill(frame->begin(), frame->end(), value);
+    return frame;
+}
 class Source : public QObject
 {
     Q_OBJECT
 Q_SIGNALS:
-    void profile(LinearSeriesPtr values);
+    void profile(QmlWind values);
+    void cnr(QmlCnr values);
     void column(TestWindFrame frame);
     void fixedColumn(FixedFramePtr frame);
 };
@@ -185,12 +210,12 @@ int main(int argc, char **argv)
     {
         UniformProbe item(profileConfig(0));
         item.setSize({600, 200});
-        auto values = std::make_shared<LinearArray<double>>(0, 60, std::vector<double>(1000, 1));
+        auto values = filled<RadialWind<RadialSpec<1000, 0, 60>>>(1);
         (*values)[100] = nan; (*values)[101] = nan;
-        item.setData(std::make_shared<const LinearArray<double>>(0, 30, std::vector<double>(values->begin(), values->end())));
+        item.setRadialWind<RadialSpec<1000, 0, 30>>(filled<RadialWind<RadialSpec<1000, 0, 30>>>(1));
         item.applyHover(100.5);
         check(item.hover()->text.contains("0.000"), "data on another grid rejected");
-        item.setData(values);
+        item.setRadialWind<RadialSpec<1000, 0, 60>>(values);
         QList<int> selected;
         item.thin({}, QRectF(0, 0, 600, 200), selected);
         check(selected.size() < 1000, "uniform profile thins along distance Y");
@@ -200,7 +225,7 @@ int main(int argc, char **argv)
         check(item.configuration().value("rangeStart").toDouble() == 0, "range start is part of the creation configuration");
         UniformProbe shifted(profileConfig(30));
         shifted.setSize({600, 200});
-        shifted.setData(std::make_shared<const LinearArray<double>>(30, 60, std::vector<double>(values->begin(), values->end())));
+        shifted.setRadialWind<RadialSpec<1000, 30, 60>>(filled<RadialWind<RadialSpec<1000, 30, 60>>>(1));
         shifted.applyHover(2.5);
         check(shifted.hover()->text.contains("150 m"), "explicit range start shifts every gate");
     }
@@ -278,6 +303,8 @@ int main(int argc, char **argv)
     Source source;
     qRegisterMetaType<TestWindFrame>();
     qmlRegisterType<TestWindBarb>("WindTest", 1, 0, "TestWindBarb");
+    qmlRegisterType<TestRadialPlot>("WindTest", 1, 0, "TestRadialPlot");
+    qmlRegisterType<TestCnrPlot>("WindTest", 1, 0, "TestCnrPlot");
     QQmlEngine engine;
     int warnings = 0; // 类型不符的 QML 调用（如把别的帧类型交给 appendColumn）只会出警告
     QObject::connect(&engine, &QQmlEngine::warnings, &engine, [&](const auto &list) { warnings += int(list.size()); });
@@ -296,6 +323,8 @@ Window {
         anchors.fill: parent
         Wind2DView {
             id: profile; objectName: "profiles"
+            windPlot: TestRadialPlot { objectName: "windSpeed"; configuration: profile.windConfiguration }
+            cnrPlot: TestCnrPlot { objectName: "cnr"; configuration: profile.cnrConfiguration }
             Layout.fillWidth: true; Layout.fillHeight: true
             specification: ({rows: 8, rangeStart: 0, gateSpacing: 15, windMin: -30, windMax: 30, cnrMin: -30, cnrMax: 30})
         }
@@ -307,7 +336,8 @@ Window {
     }
     Connections {
         target: source
-        function onProfile(values) { profile.updateWS(values); profile.updateCNR(values) }
+        function onProfile(values) { profile.updateWS(values) }
+        function onCnr(values) { profile.updateCNR(values) }
         function onColumn(frame) { barbs.appendFrame(frame) }
     }
 })QML", QUrl());
@@ -318,7 +348,13 @@ Window {
     auto *cnr = root->findChild<Wind2DItem *>("cnr");
     auto *barbs = root->findChild<TestWindBarb *>("barbs");
     check(window && wind && cnr && barbs, "QML registered types assemble");
-    Q_EMIT source.profile(std::make_shared<const LinearArray<double>>(0, 15, std::vector<double>{1, 3, 5, -2, 6, 12, 8, 4}));
+    auto windValues = filled<RadialWind<QmlSpec>>(0);
+    auto cnrValues = filled<CNR<QmlSpec>>(0);
+    const std::array values{1., 3., 5., -2., 6., 12., 8., 4.};
+    std::copy(values.begin(), values.end(), windValues->begin());
+    std::copy(values.begin(), values.end(), cnrValues->begin());
+    Q_EMIT source.profile(std::move(windValues));
+    Q_EMIT source.cnr(std::move(cnrValues));
     wind->applyHover(3.5);
     check(wind->hover() && wind->hover()->text.contains("45 m") && wind->hover()->text.contains("-2.000"),
           "QML forwards values onto start + k x spacing gates");
