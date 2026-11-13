@@ -1,5 +1,4 @@
 #pragma once
-#include "LinearArray.h"
 #include <algorithm>
 #include <cmath>
 #include <ranges>
@@ -86,7 +85,7 @@ void thinIrregular(const Positions &positions, const double lo, const double hi,
     flush();
 }
 
-// 均匀序列：位置取自线性数组的起点、步长与长度，直接反算每桶末端，不遍历元素。
+// 均匀序列：位置由起点、步长与数量确定，直接反算每桶末端，不读取数据数组。
 // 与非均匀版使用同一套绝对位置桶和两端哑桶；每个非空桶留首个或首末下标。
 // 输入由创建/推送入口保证有效；这里的空输出处理只针对空数据或尚未布局的视口。
 template <class Out>
@@ -115,12 +114,6 @@ void thinUniform(const double start, const double step, const int count, const d
         if (perBin > 1 && next - 1 != first) out.push_back(next - 1);
         first = next;
     }
-}
-
-template <class T, class Out>
-void thinUniform(const LinearArray<T> &positions, double lo, double hi, double binWidth, int perBin, Out &out)
-{
-    thinUniform(positions.start, positions.step, static_cast<int>(positions.size()), lo, hi, binWidth, perBin, out);
 }
 
 } // namespace ChartThinning
