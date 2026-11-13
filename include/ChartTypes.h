@@ -4,7 +4,7 @@
 #include <QVariantMap>
 #include <QtQml/qqmlregistration.h>
 #include "GimbalModel.h"
-#include "WindProfile.h"
+#include "LinearArray.h"
 
 // Qt 消费侧登记原类型；算法与设备核心不依赖 QML。
 using RxTime = std::chrono::system_clock::time_point;
@@ -45,14 +45,6 @@ public:
             toOrientation().inverseRotation() * WorldModel(azimuth, elevation).toOrientation());
         return {{"pan", pose.pan()}, {"tilt", pose.tilt()}};
     }
-};
-
-// QML 只转交整帧份额，不展开层数组，也不转换时间。
-struct VerticalWindProfileQml
-{
-    Q_GADGET
-    QML_FOREIGN(VerticalWindProfilePtr)
-    QML_ANONYMOUS
 };
 
 // 功率谱（斜距 × 频率二维线性数组）：QML 只原样转交给功率谱图，不展开。

@@ -21,7 +21,7 @@
 #include <QSGVertexColorMaterial>
 #include <QVector>
 
-#include "WindProfile.h"
+#include "DAQChannelSpec.h"
 #include "WallClockHistory.h"
 #include "ChartThinning.h"
 #include "ChartTicks.h"    // clock / decimal
@@ -35,8 +35,8 @@
 //
 // ── 数据 ─────────────────────────────────────────────────────────────────────────
 // 历史是只读垂直风廓线帧的定长环，真实反演与虚拟真值走同一个入口。
-// 每帧自带 RxTime 和 ENU 向量数组；均匀版带起始高度/层间距，非均匀版带等长高度数组。
-// 两种输入共用几何与交互，各自持有整帧历史；时间仅在投影/画轴时转成秒。
+// 每帧自带墙钟和 ENU 向量数组；具体帧提供高度起点/层距，图中不另存轴配置副本。
+// 静态反演帧与动态风场帧共用几何与交互，各自持有整帧历史；时间仅在投影/画轴时转成秒。
 // QML 原样转交整帧，隐藏也收齐历史；GUI 写，场景图同步期间渲染线程只读。
 //
 // ── 抽稀：两根轴同一套 ───────────────────────────────────────────────────────────────
@@ -89,12 +89,13 @@
 // ============================================================
 
 // ============================================================
-// WindBarbChart —— 两种高度布局共用的图元和交互
+// WindBarbChart —— 具体帧类型共用的图元和交互
 // ============================================================
 class WindBarbChart : public QuickChartItem
 {
     Q_OBJECT
-    QML_ANONYMOUS
+    QML_NAMED_ELEMENT(WindBarbChart)
+    QML_UNCREATABLE("由具体通道图窗实现")
     Q_PROPERTY(QVariantMap configuration READ configuration WRITE setConfiguration REQUIRED)
 public:
     explicit WindBarbChart(QQuickItem *parent = nullptr)
@@ -118,9 +119,12 @@ public:
     }
 
 protected:
-    // 历史里的整帧只读借出，不保存第二份数据；层高度由 winds 的线性轴定位。
+    // 历史保活原帧；下面的范围只在一次绘制期间借用，不保存第二份数据。
     virtual int columnCount() const = 0;
-    virtual const WindProfileView &columnAt(int i) const = 0;
+    virtual RxTime columnTime(int i) const = 0;
+    virtual double columnStart(int i) const = 0;
+    virtual double columnStep(int i) const = 0;
+    virtual std::span<const std::optional<LinAlg::Vec3>> columnValues(int i) const = 0;
     virtual void resetHistory(std::size_t capacity) = 0;
     int minimumLayers() const { return heightBins_; }
     void columnAccepted(RxTime at)
@@ -205,16 +209,17 @@ protected:
         const auto eachBarb = [&](auto &&visit) {
             for (const int c : binPick_)
             {
-                const auto &profile = columnAt(c);
+                const auto values = columnValues(c);
+                const double start = columnStart(c), step = columnStep(c);
                 const double x = xAxis_.toPixel((timeBinOf(timeAt(c)) + 0.5) * binSec, plot.left(), plot.right());
-                ChartThinning::thinUniform(profile.winds.start, profile.winds.step, static_cast<int>(profile.winds.size()), yAxis_.lo, yAxis_.hi, binM, 1, gatePick_);
+                ChartThinning::thinUniform(start, step, static_cast<int>(values.size()), yAxis_.lo, yAxis_.hi, binM, 1, gatePick_);
                 for (const int k : gatePick_)
                 {
-                    const auto &wind = profile.winds[k];
+                    const auto &wind = values[k];
                     if (!wind) continue; // 桶里的首门缺测：这一格不画，不往后找。
                     const double s = std::hypot(wind->x(), wind->y());
                     if (!std::isfinite(s)) continue;
-                    const double mid = (std::floor(profile.winds.positionAt(k) / binM) + 0.5) * binM;
+                    const double mid = (std::floor((start + k * step) / binM) + 0.5) * binM;
                     if (mid + halfY < yAxis_.lo || mid - halfY > yAxis_.hi)
                         continue;
                     visit(x, yAxis_.toPixel(mid, plot.bottom(), plot.top()), s, *wind);
@@ -270,21 +275,20 @@ private:
     {
         double result = std::numeric_limits<double>::infinity();
         for (int i = 0; i < columnCount(); ++i)
-            result = std::min(result, columnAt(i).winds.positionAt(0));
+            result = std::min(result, columnStart(i));
         return result;
     }
     [[nodiscard]] double highest() const
     {
         double result = -std::numeric_limits<double>::infinity();
         for (int i = 0; i < columnCount(); ++i) {
-            const auto &column = columnAt(i);
-            result = std::max(result, column.winds.positionAt(column.winds.size() - 1));
+            result = std::max(result, columnStart(i) + columnStep(i) * (columnValues(i).size() - 1));
         }
         return result;
     }
     [[nodiscard]] double timeAt(const int column) const
     {
-        return std::chrono::duration<double>(columnAt(column).at.time_since_epoch()).count();
+        return std::chrono::duration<double>(columnTime(column).time_since_epoch()).count();
     }
 
     // 刻度。两根轴的视口单位就是要显示的量：横轴 epoch 秒走钟表阶梯，纵轴米走十进制阶梯。
@@ -474,30 +478,38 @@ private:
 // WindBarbChart —— inline 实现
 // ============================================================
 
+// 模板历史保存具体原帧；Qt 可调用入口和类型登记由消费它的官邸提供。
+template<ImmutableWallClockFrame Frame>
 class WindBarbItem : public WindBarbChart
 {
-    Q_OBJECT
-    QML_ELEMENT
 public:
     explicit WindBarbItem(QQuickItem *parent = nullptr)
         : WindBarbItem(QVariantMap{{"heightBins", 1}, {"windowSeconds", 1.0},
             {"columnSeconds", 1.0}, {"maxHeight", 1.0}}, parent) {}
     explicit WindBarbItem(const QVariantMap &config, QQuickItem *parent = nullptr) : WindBarbChart(parent)
     { configure(config); }
-    Q_INVOKABLE void appendColumn(VerticalWindProfilePtr profile)
+    void appendColumn(std::shared_ptr<const Frame> profile)
     {
-        if (!profile || !profile->hasValidGrid()
-            || profile->winds.size() < static_cast<std::size_t>(minimumLayers())) return;
+        if (!profile) return;
+        const auto values = profile->values();
+        const double start = profile->heightStartM(), step = profile->heightStepM();
+        if (values.empty() || !std::isfinite(start) || !std::isfinite(step) || step <= 0.0
+            || !std::isfinite(start + step * (values.size() - 1))
+            || values.size() < static_cast<std::size_t>(minimumLayers())) return;
         const auto at = profile->at;
         if (!history_->append(std::move(profile))) return;
         columnAccepted(at);
     }
 protected:
     int columnCount() const override { return static_cast<int>(history_->size()); }
-    const WindProfileView &columnAt(int i) const override { return *history_->at(i); }
+    RxTime columnTime(int i) const override { return history_->at(i)->at; }
+    double columnStart(int i) const override { return history_->at(i)->heightStartM(); }
+    double columnStep(int i) const override { return history_->at(i)->heightStepM(); }
+    std::span<const std::optional<LinAlg::Vec3>> columnValues(int i) const override
+    { return history_->at(i)->values(); }
     void resetHistory(std::size_t capacity) override { history_ = std::make_unique<History>(capacity); }
 private:
-    using History = WallClockHistory<VerticalWindProfilePtr,
-        [](const VerticalWindProfilePtr &profile) { return profile->at; }>;
+    using History = WallClockHistory<std::shared_ptr<const Frame>,
+        [](const std::shared_ptr<const Frame> &profile) { return profile->at; }>;
     std::unique_ptr<History> history_ = std::make_unique<History>(1);
 };

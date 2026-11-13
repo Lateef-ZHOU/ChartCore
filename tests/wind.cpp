@@ -49,16 +49,26 @@ public:
     }
     using Wind2DItem::thin;
 };
-class BarbProbe : public WindBarbItem
+using TestWindFrame = std::shared_ptr<const WindField::Frame>;
+class TestWindBarb : public WindBarbItem<WindField::Frame>
+{
+    Q_OBJECT
+public:
+    explicit TestWindBarb(QQuickItem *parent = nullptr) : WindBarbItem(parent) {}
+    Q_INVOKABLE void appendFrame(TestWindFrame frame) { appendColumn(std::move(frame)); }
+};
+class BarbProbe : public WindBarbItem<WindField::Frame>
 {
 public:
     using WindBarbItem::WindBarbItem;
     using WindBarbItem::columnCount;
-    using WindBarbItem::columnAt;
+    using WindBarbItem::columnValues;
+    using WindBarbItem::columnStart;
+    using WindBarbItem::columnStep;
     std::vector<QSGGeometry::ColoredPoint2D> geometry(const std::optional<LinAlg::Vec3> &wind)
     {
         const RxTime at(std::chrono::seconds(1000));
-        appendColumn(shareWindProfile(std::make_shared<const WindField::Frame>(at, 50, 60, std::vector<std::optional<LinAlg::Vec3>>{wind})));
+        appendColumn(std::make_shared<const WindField::Frame>(at, 50, 60, std::vector<std::optional<LinAlg::Vec3>>{wind}));
         xAxis_.lo = 990; xAxis_.hi = 1010;
         yAxis_.lo = 0; yAxis_.hi = 100;
         QSGNode root;
@@ -68,12 +78,30 @@ public:
         return {vertices, vertices + data->vertexCount()};
     }
 };
+struct FixedSpec {
+    static constexpr const char *name = "fixed";
+    static constexpr int rangeGateCount = 3, frequencyBinCount = 1;
+    static constexpr double rangeStartM = 10, rangeStepM = 15, frequencyStartMHz = 0,
+        frequencyStepMHz = 1, wavelengthM = 1.55e-6, zeroWindMHz = 80;
+};
+using FixedFrame = VerticalWindProfileUnit<FixedSpec>;
+using FixedFramePtr = std::shared_ptr<const FixedFrame>;
+class FixedBarbProbe : public WindBarbItem<FixedFrame>
+{
+public:
+    using WindBarbItem::WindBarbItem;
+    using WindBarbItem::columnValues;
+    using WindBarbItem::columnTime;
+    using WindBarbItem::columnStart;
+    using WindBarbItem::columnStep;
+};
 class Source : public QObject
 {
     Q_OBJECT
 Q_SIGNALS:
     void profile(LinearSeriesPtr values);
-    void column(VerticalWindProfilePtr frame);
+    void column(TestWindFrame frame);
+    void fixedColumn(FixedFramePtr frame);
 };
 
 static void thinning()
@@ -124,9 +152,9 @@ static QVariantMap barbConfig()
 {
     return {{"heightBins", 1}, {"windowSeconds", 2}, {"columnSeconds", 1}, {"maxHeight", 1500}};
 }
-static VerticalWindProfilePtr frame(RxTime at, double startHeight)
+static TestWindFrame frame(RxTime at, double startHeight)
 {
-    return shareWindProfile(std::make_shared<const WindField::Frame>(at, startHeight, 15.0, std::vector<std::optional<LinAlg::Vec3>>{LinAlg::Vec3{2, 1, 0}, LinAlg::Vec3{3, 2, 0}, LinAlg::Vec3{4, 3, 0}}));
+    return std::make_shared<const WindField::Frame>(at, startHeight, 15.0, std::vector<std::optional<LinAlg::Vec3>>{LinAlg::Vec3{2, 1, 0}, LinAlg::Vec3{3, 2, 0}, LinAlg::Vec3{4, 3, 0}});
 }
 
 int main(int argc, char **argv)
@@ -164,25 +192,25 @@ int main(int argc, char **argv)
         BarbProbe item(barbConfig());
         item.setSize({800, 600});
         auto first = frame(now, 10);
-        std::weak_ptr<const WindProfileView> weak = first;
+        std::weak_ptr<const WindField::Frame> weak = first;
         item.appendColumn(first);
-        check(item.columnCount() == 1 && item.columnAt(0).winds.data() == first->winds.data(),
+        check(item.columnCount() == 1 && item.columnValues(0).data() == first->winds.data(),
               "history shares whole immutable frame, no array copies");
         first.reset();
-        item.appendColumn(shareWindProfile(std::make_shared<const WindField::Frame>(now, 0.0, 0.0, std::vector<std::optional<LinAlg::Vec3>>{LinAlg::Vec3{1, 2, 3}})));
+        item.appendColumn(std::make_shared<const WindField::Frame>(now, 0.0, 0.0, std::vector<std::optional<LinAlg::Vec3>>{LinAlg::Vec3{1, 2, 3}}));
         check(item.columnCount() == 1, "invalid height grid rejected before ring changes");
         for (int i = 1; i <= 4; ++i)
             item.appendColumn(frame(now + std::chrono::seconds(i), i * 100));
         check(item.columnCount() == 3 && weak.expired(), "ring capacity enforced and oldest whole frame released");
-        check(item.columnAt(0).winds.positionAt(0) == 200 && item.columnAt(2).winds.positionAt(2) == 430,
+        check((item.columnStart(0) + 0 * item.columnStep(0)) == 200 && (item.columnStart(2) + 2 * item.columnStep(2)) == 430,
               "wrapped ring preserves start and step heights");
         item.appendColumn(frame(now + std::chrono::seconds(4), 900));
         item.appendColumn(frame(now + std::chrono::seconds(3), 800));
-        check(item.columnCount() == 3 && item.columnAt(0).winds.positionAt(0) == 200
-              && item.columnAt(2).winds.positionAt(0) == 400,
+        check(item.columnCount() == 3 && (item.columnStart(0) + 0 * item.columnStep(0)) == 200
+              && (item.columnStart(2) + 0 * item.columnStep(2)) == 400,
               "duplicate and older wind frames do not replace or evict accepted history");
         item.appendColumn(frame(now + std::chrono::seconds(5), 500));
-        check(item.columnAt(0).winds.positionAt(0) == 300 && item.columnAt(2).winds.positionAt(0) == 500,
+        check((item.columnStart(0) + 0 * item.columnStep(0)) == 300 && (item.columnStart(2) + 0 * item.columnStep(2)) == 500,
               "wind history resumes above last accepted timestamp");
     }
     {
@@ -198,8 +226,42 @@ int main(int argc, char **argv)
             return std::isfinite(v.x) && std::isfinite(v.y);
         }), "present zero wind retains finite calm glyph");
     }
+    {
+        qRegisterMetaType<FixedFramePtr>();
+        Source queuedSource;
+        std::weak_ptr<const FixedFrame> weak;
+        {
+            FixedBarbProbe item(barbConfig());
+            QObject::connect(&queuedSource, &Source::fixedColumn, &item,
+                [&](const FixedFramePtr &frame) { item.appendColumn(frame); }, Qt::QueuedConnection);
+            auto filling = std::make_shared<FixedFrame>(now, 30.0);
+            (*filling)[0] = LinAlg::Vec3{0, 0, 0};
+            (*filling)[2] = LinAlg::Vec3{3, 4, -1};
+            const auto *data = filling->data();
+            FixedFramePtr frozen = std::move(filling);
+            weak = frozen;
+            Q_EMIT queuedSource.fixedColumn(frozen);
+            frozen.reset();
+            check(!weak.expired(), "queued message keeps original static frame alive");
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+            check(item.columnValues(0).data() == data && item.columnTime(0) == now
+                && item.columnValues(0)[0]->norm2() == 0 && !item.columnValues(0)[1]
+                && item.columnValues(0)[2]->z() == -1
+                && std::abs(item.columnStart(0) - 5) < 1e-9
+                && std::abs(item.columnStep(0) - 7.5) < 1e-9,
+                "queued static frame retains identity, missing values, timestamp and projected grid");
+            for (int i = 1; i <= 3; ++i)
+                item.appendColumn(std::make_shared<const FixedFrame>(now + std::chrono::seconds(i), 30));
+            check(weak.expired(), "static frame released after history overwrites its last owner");
+            auto last = std::make_shared<const FixedFrame>(now + std::chrono::seconds(4), 30);
+            weak = last;
+            item.appendColumn(last);
+        }
+        check(weak.expired(), "destroying typed chart releases final frame");
+    }
     Source source;
-    qRegisterMetaType<VerticalWindProfilePtr>();
+    qRegisterMetaType<TestWindFrame>();
+    qmlRegisterType<TestWindBarb>("WindTest", 1, 0, "TestWindBarb");
     QQmlEngine engine;
     int warnings = 0; // 类型不符的 QML 调用（如把别的帧类型交给 appendColumn）只会出警告
     QObject::connect(&engine, &QQmlEngine::warnings, &engine, [&](const auto &list) { warnings += int(list.size()); });
@@ -210,6 +272,7 @@ import QtQuick
 import QtQuick.Window
 import QtQuick.Layouts
 import Lidar.Charts
+import WindTest
 Window {
     width: 1200; height: 800; visible: true
     color: "#202020"
@@ -220,7 +283,7 @@ Window {
             Layout.fillWidth: true; Layout.fillHeight: true
             specification: ({rows: 8, rangeStart: 0, gateSpacing: 15, windMin: -30, windMax: 30, cnrMin: -30, cnrMax: 30})
         }
-        WindBarbItem {
+        TestWindBarb {
             id: barbs; objectName: "barbs"
             Layout.fillWidth: true; Layout.fillHeight: true
             configuration: ({heightBins: 1, windowSeconds: 120, columnSeconds: 1, maxHeight: 1500})
@@ -229,7 +292,7 @@ Window {
     Connections {
         target: source
         function onProfile(values) { profile.updateWS(values); profile.updateCNR(values) }
-        function onColumn(frame) { barbs.appendColumn(frame) }
+        function onColumn(frame) { barbs.appendFrame(frame) }
     }
 })QML", QUrl());
     std::unique_ptr<QObject> root(component.create());
@@ -237,7 +300,7 @@ Window {
     auto *window = qobject_cast<QQuickWindow *>(root.get());
     auto *wind = root->findChild<Wind2DItem *>("windSpeed");
     auto *cnr = root->findChild<Wind2DItem *>("cnr");
-    auto *barbs = root->findChild<WindBarbItem *>("barbs");
+    auto *barbs = root->findChild<TestWindBarb *>("barbs");
     check(window && wind && cnr && barbs, "QML registered types assemble");
     Q_EMIT source.profile(std::make_shared<const LinearArray<double>>(0, 15, std::vector<double>{1, 3, 5, -2, 6, 12, 8, 4}));
     wind->applyHover(3.5);
@@ -246,7 +309,7 @@ Window {
     for (int i = 0; i < 90; i += 5) {
         std::vector<std::optional<LinAlg::Vec3>> winds;
         for (int k = 0; k < 8; ++k) winds.emplace_back(LinAlg::Vec3(3 + k / 5.0, 2 + i / 10.0, 0));
-        Q_EMIT source.column(shareWindProfile(std::make_shared<const WindField::Frame>(now - std::chrono::seconds(90 - i), 0.0, 7.5, std::move(winds))));
+        Q_EMIT source.column(std::make_shared<const WindField::Frame>(now - std::chrono::seconds(90 - i), 0.0, 7.5, std::move(winds)));
     }
     check(warnings == 0, "QML forwards typed immutable whole frame without type warnings");
     wait(200);
