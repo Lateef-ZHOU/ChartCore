@@ -1,3 +1,9 @@
+# UICore 原有的 ResourcePhase 接线依赖 HandleCore；本次只禁止引入族运行层。
+foreach(dependency Lidar::FamilyCore Lidar::DeviceCore OpenMP::OpenMP_CXX)
+    if(TARGET ${dependency})
+        message(FATAL_ERROR "Standalone ChartCore unexpectedly loaded ${dependency}")
+    endif()
+endforeach()
 add_executable(module_smoke smoke.cpp)
 target_link_libraries(module_smoke PRIVATE Lidar::ChartCore)
 target_link_libraries(module_smoke PRIVATE LidarUICoreplugin LidarChartCoreplugin)

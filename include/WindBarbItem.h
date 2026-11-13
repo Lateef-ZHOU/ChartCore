@@ -23,7 +23,7 @@
 #include <QSGGeometryNode>
 #include <QSGVertexColorMaterial>
 
-#include "DAQChannelSpec.h"
+#include "DAQFamily/DAQChannelSpec.h"
 #include "WallClockHistory.h"
 #include "ChartThinning.h"
 #include "ChartTicks.h"    // clock / decimal

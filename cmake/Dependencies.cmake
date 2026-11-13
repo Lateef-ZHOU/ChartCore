@@ -1,15 +1,17 @@
 include_guard(GLOBAL)
 include(FetchContent)
-# 消费方已提供目标时直接复用；否则拉取经过验证的固定提交，不启用 Handle 可选模块。
-if(NOT TARGET Lidar::Algorithm)
-    FetchContent_Declare(lidar_algorithm
-        GIT_REPOSITORY https://github.com/Lateef-ZHOU/Algorithm.git
-        GIT_TAG c42cff8f14226969fdeca030a3196b901ab7b967)
-    FetchContent_MakeAvailable(lidar_algorithm)
-endif()
+# 只加载族的数据契约；Algorithm 由 FamilyModels 传递，不加载族运行层。
 if(NOT TARGET Lidar::UICore)
     FetchContent_Declare(lidar_uicore
         GIT_REPOSITORY https://github.com/Lateef-ZHOU/UICore.git
         GIT_TAG ac88c0c9fd037f2e2a62c62d033b05cf1814adfa)
     FetchContent_MakeAvailable(lidar_uicore)
+endif()
+
+if(NOT TARGET Lidar::FamilyModels)
+    FetchContent_Declare(lidar_familymodels
+        GIT_REPOSITORY https://github.com/Lateef-ZHOU/TaskCore.git
+        GIT_TAG 6c1ccc3b9eb7e2c1c4c4c59ec150471782a129eb
+        SOURCE_SUBDIR models)
+    FetchContent_MakeAvailable(lidar_familymodels)
 endif()

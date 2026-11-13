@@ -3,7 +3,7 @@
 #include <QMetaType>
 #include <QVariantMap>
 #include <QtQml/qqmlregistration.h>
-#include "GimbalModel.h"
+#include "GMBFamily/GimbalModel.h"
 #include "LinearArray.h"
 
 // Qt 消费侧登记原类型；算法与设备核心不依赖 QML。

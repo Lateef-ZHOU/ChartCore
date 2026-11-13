@@ -1,3 +1,11 @@
+## 2026-11-14：只引用族模型目标（用户定）
+
+绘图使用的 DAQChannelSpec 与 GimbalModel 改从 FamilyCore 的 DAQFamily/GMBFamily 读取，链接 `Lidar::FamilyModels`。该 INTERFACE 目标传递 Algorithm，不引入 DeviceCore、完整 FamilyCore 或 OpenMP；UICore 原有 ResourcePhase 对 HandleCore 的依赖保持。
+
+独立配置时通过 `lidar_familymodels` + `SOURCE_SUBDIR models` 加载 FamilyCore 的模型入口；主程序若已创建同名目标则复用。未发布联调必须设置 `FETCHCONTENT_SOURCE_DIR_LIDAR_FAMILYMODELS=/path/to/FamilyCore`，并覆盖配套 Algorithm/UICore。若同时加载完整 FamilyCore，两入口须固定同一提交。无额外数据包装、复制或 Qt 类型登记迁移，绘图仍接原只读共享帧。
+
+Windows/MSVC Release、公开头构建与 CTest 4/4 通过；独立配置检查禁止意外加载 DeviceCore、完整 FamilyCore 和 OpenMP。未验证远端拉取，不推送。
+
 ## 2026-11-14：新真值帧接入验证
 
 Windows/MSVC Release 与公开头编译通过，CTest 4/4。
@@ -64,7 +72,7 @@ Qt Quick 二维图表与 QRhi 三维高度面，以及配套 QML 图窗。Window
 ## 边界与依赖
 
 - Qt ≥ 6.11.2；Qt 由使用环境提供，不在仓库中打包。
-- 上游：[Algorithm](https://github.com/Lateef-ZHOU/Algorithm), [UICore](https://github.com/Lateef-ZHOU/UICore)。已有同名 CMake 目标时复用；否则 FetchContent 拉取固定完整提交。
+- 上游：FamilyCore 的 FamilyModels（传递 Algorithm）、[UICore](https://github.com/Lateef-ZHOU/UICore)。已有同名 CMake 目标时复用；否则 FetchContent 拉取固定完整提交。
 - 本仓库不依赖 LiDAR_DataACQ 源码、应用目录或设备型号；不包含第三方二进制。
 - 使用 Qt Quick/QML、GuiPrivate/QRhi 和 ShaderTools；必须使用同一套 Qt 开发包/运行库，升级 Qt 后重新构建和验证。
 - Surface 固定宽高各 2 倍 SSAA，完整 XY 域、Z 钳值、无 Roll 旋转及滚轮缩放。QML 持原谱，绘制器仅持显示快照；二维图自行保留历史。

@@ -18,7 +18,7 @@
 #include "ChartTicks.h"
 #include "SeriesChart.h"
 #include "ChartTypes.h"
-#include "GimbalModel.h"
+#include "GMBFamily/GimbalModel.h"
 #include "WallClockHistory.h"
 
 // ============================================================

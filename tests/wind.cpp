@@ -1,4 +1,4 @@
-#include "DAQChannelSpec.h"
+#include "DAQFamily/DAQChannelSpec.h"
 #include <span>
 #include <utility>
 #include <optional>
