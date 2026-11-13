@@ -1,3 +1,9 @@
+## 2026-11-14：新真值帧接入验证
+
+Windows/MSVC Release 与公开头编译通过，CTest 4/4。
+
+仿真真值改用 VerticalWindProfileUnit<SimCardChannelSpec>，沿既有 WindBarbItem 模板直接接入，无生产绘图接口改动。测试删除 WindField.h 依赖；仅非法动态网格的绘图契约用例保留本地测试夹具，静态原帧的排队保活、数组同址与环覆盖释放仍独立验证。不推送。
+
 ## 2026-11-14 风羽图直接依赖整理（用户定）
 
 WindBarbItem.h 删除无用的 QDateTime、QVector，直接包含 QList、chrono、cstddef、optional。整帧历史和只读共享份额传递不变。

@@ -1,4 +1,6 @@
-#include "WindField.h"
+#include "DAQChannelSpec.h"
+#include <span>
+#include <utility>
 #include <optional>
 #include <algorithm>
 #include <chrono>
@@ -49,15 +51,29 @@ public:
     }
     using Wind2DItem::thin;
 };
-using TestWindFrame = std::shared_ptr<const WindField::Frame>;
-class TestWindBarb : public WindBarbItem<WindField::Frame>
+// 测试绘图的最小帧契约，刻意允许运行时非法网格；真实静态帧另有排队测试。
+struct ChartFrameFixture {
+    const std::chrono::system_clock::time_point at;
+    const double start, step;
+    const std::vector<std::optional<LinAlg::Vec3>> winds;
+    ChartFrameFixture(std::chrono::system_clock::time_point time, double first, double spacing,
+        std::vector<std::optional<LinAlg::Vec3>> data)
+        : at(time), start(first), step(spacing), winds(std::move(data)) {}
+    DISABLE_COPY_MOVE(ChartFrameFixture)
+    auto values() const & noexcept { return std::span<const std::optional<LinAlg::Vec3>>(winds); }
+    auto values() const && = delete;
+    double heightStartM() const noexcept { return start; }
+    double heightStepM() const noexcept { return step; }
+};
+using TestWindFrame = std::shared_ptr<const ChartFrameFixture>;
+class TestWindBarb : public WindBarbItem<ChartFrameFixture>
 {
     Q_OBJECT
 public:
     explicit TestWindBarb(QQuickItem *parent = nullptr) : WindBarbItem(parent) {}
     Q_INVOKABLE void appendFrame(TestWindFrame frame) { appendColumn(std::move(frame)); }
 };
-class BarbProbe : public WindBarbItem<WindField::Frame>
+class BarbProbe : public WindBarbItem<ChartFrameFixture>
 {
 public:
     using WindBarbItem::WindBarbItem;
@@ -68,7 +84,7 @@ public:
     std::vector<QSGGeometry::ColoredPoint2D> geometry(const std::optional<LinAlg::Vec3> &wind)
     {
         const RxTime at(std::chrono::seconds(1000));
-        appendColumn(std::make_shared<const WindField::Frame>(at, 50, 60, std::vector<std::optional<LinAlg::Vec3>>{wind}));
+        appendColumn(std::make_shared<const ChartFrameFixture>(at, 50, 60, std::vector<std::optional<LinAlg::Vec3>>{wind}));
         xAxis_.lo = 990; xAxis_.hi = 1010;
         yAxis_.lo = 0; yAxis_.hi = 100;
         QSGNode root;
@@ -154,7 +170,7 @@ static QVariantMap barbConfig()
 }
 static TestWindFrame frame(RxTime at, double startHeight)
 {
-    return std::make_shared<const WindField::Frame>(at, startHeight, 15.0, std::vector<std::optional<LinAlg::Vec3>>{LinAlg::Vec3{2, 1, 0}, LinAlg::Vec3{3, 2, 0}, LinAlg::Vec3{4, 3, 0}});
+    return std::make_shared<const ChartFrameFixture>(at, startHeight, 15.0, std::vector<std::optional<LinAlg::Vec3>>{LinAlg::Vec3{2, 1, 0}, LinAlg::Vec3{3, 2, 0}, LinAlg::Vec3{4, 3, 0}});
 }
 
 int main(int argc, char **argv)
@@ -192,12 +208,12 @@ int main(int argc, char **argv)
         BarbProbe item(barbConfig());
         item.setSize({800, 600});
         auto first = frame(now, 10);
-        std::weak_ptr<const WindField::Frame> weak = first;
+        std::weak_ptr<const ChartFrameFixture> weak = first;
         item.appendColumn(first);
         check(item.columnCount() == 1 && item.columnValues(0).data() == first->winds.data(),
               "history shares whole immutable frame, no array copies");
         first.reset();
-        item.appendColumn(std::make_shared<const WindField::Frame>(now, 0.0, 0.0, std::vector<std::optional<LinAlg::Vec3>>{LinAlg::Vec3{1, 2, 3}}));
+        item.appendColumn(std::make_shared<const ChartFrameFixture>(now, 0.0, 0.0, std::vector<std::optional<LinAlg::Vec3>>{LinAlg::Vec3{1, 2, 3}}));
         check(item.columnCount() == 1, "invalid height grid rejected before ring changes");
         for (int i = 1; i <= 4; ++i)
             item.appendColumn(frame(now + std::chrono::seconds(i), i * 100));
@@ -309,7 +325,7 @@ Window {
     for (int i = 0; i < 90; i += 5) {
         std::vector<std::optional<LinAlg::Vec3>> winds;
         for (int k = 0; k < 8; ++k) winds.emplace_back(LinAlg::Vec3(3 + k / 5.0, 2 + i / 10.0, 0));
-        Q_EMIT source.column(std::make_shared<const WindField::Frame>(now - std::chrono::seconds(90 - i), 0.0, 7.5, std::move(winds)));
+        Q_EMIT source.column(std::make_shared<const ChartFrameFixture>(now - std::chrono::seconds(90 - i), 0.0, 7.5, std::move(winds)));
     }
     check(warnings == 0, "QML forwards typed immutable whole frame without type warnings");
     wait(200);
