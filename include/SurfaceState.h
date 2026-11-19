@@ -10,14 +10,37 @@
 #include <atomic>
 #include <cmath>
 #include <chrono>
-#include "LinearArray.h"
+#include <cstddef>
+#include <memory>
 
 // 行为距离门、列为频点；具体规格由实例的控制器传入。
+// 行列数与两条物理轴共同构成创建期配置，只描述网格，不承载谱数据。
 struct SurfaceGrid
 {
     int rows = 0;
     int columns = 0;
+    double rowStart = 0.0;
+    double rowStep = 0.0;
+    double columnStart = 0.0;
+    double columnStep = 0.0;
+
     int pointCount() const { return rows * columns; }
+    [[nodiscard]] double rowPosition(const std::size_t row) const { return rowStart + static_cast<double>(row) * rowStep; }
+    [[nodiscard]] double columnPosition(const std::size_t column) const
+    {
+        return columnStart + static_cast<double>(column) * columnStep;
+    }
+    [[nodiscard]] bool hasValidAxes() const
+    {
+        return rows > 0 && columns > 0 && std::isfinite(rowStart) && std::isfinite(rowStep) && rowStep > 0.0
+               && std::isfinite(columnStart) && std::isfinite(columnStep) && columnStep > 0.0;
+    }
+    // 同一网格：行列数与两条轴的起点、步长都相同，不比较谱数据（本类型不承载元素）。
+    [[nodiscard]] bool sameAxes(const SurfaceGrid &other) const
+    {
+        return rows == other.rows && columns == other.columns && rowStart == other.rowStart && rowStep == other.rowStep
+               && columnStart == other.columnStart && columnStep == other.columnStep;
+    }
     bool operator==(const SurfaceGrid &) const = default;
 };
 
@@ -31,7 +54,7 @@ struct PreparedSurface
     QVector<float> heights;
     quint64 revision = 0;
     SurfaceGrid grid;
-    LinearSpectrumPtr axes = std::make_shared<const LinearArray2D<double>>(); // 本帧两条物理轴（行 = 斜距 m、列 = 频率 MHz），只带网格不带元素
+    std::shared_ptr<const SurfaceGrid> axes = std::make_shared<const SurfaceGrid>(); // 本帧两条物理轴（行 = 斜距 m、列 = 频率 MHz），只带网格不带元素
     double zMin = 0, zMax = 1;
 };
 

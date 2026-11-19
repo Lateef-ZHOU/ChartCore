@@ -260,7 +260,7 @@ public:
         }
         const SurfaceGrid grid{value.value("rows").toInt(), value.value("columns").toInt()};
         // 创建时固定坐标轴：行 = 斜距、列 = 频率；收到谱时核对其 Spec 与配置一致。
-        auto axes = std::make_shared<const LinearArray2D<double>>(grid.rows, grid.columns, value.value("rowStart").toDouble(),
+        auto axes = std::make_shared<const SurfaceGrid>(grid.rows, grid.columns, value.value("rowStart").toDouble(),
                                          value.value("rowStep").toDouble(), value.value("columnStart").toDouble(),
                                          value.value("columnStep").toDouble());
         if (grid.rows < 2 || grid.columns < 2 || qint64(grid.rows) * grid.columns > std::numeric_limits<int>::max() / 6
@@ -361,7 +361,7 @@ private:
         update();
     }
     SurfaceGrid grid_{2, 2};
-    LinearSpectrumPtr axes_ = std::make_shared<const LinearArray2D<double>>(); // 配置给出的初始网格（不带元素）
+    std::shared_ptr<const SurfaceGrid> axes_ = std::make_shared<const SurfaceGrid>(); // 配置给出的初始网格（不带元素）
     SurfaceAxesItem *const axisItem_;
     PreparedSurface surface_;
     SurfaceCamera camera_;

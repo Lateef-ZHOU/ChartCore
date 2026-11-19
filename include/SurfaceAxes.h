@@ -150,7 +150,7 @@ inline QVector<double> ticks(double low, double high, int target)
 }
 
 // 两条水平轴按网格的物理坐标标注：列 = 频率（MHz），行 = 斜距（m），端点为首末格点的位置。
-inline Scene makeScene(const Projection &projection, const LinearArray2D<double> &grid, double zMin, double zMax,
+inline Scene makeScene(const Projection &projection, const SurfaceGrid &grid, double zMin, double zMax,
                        const QFont &font)
 {
     Scene scene;
@@ -214,7 +214,7 @@ inline Frame projectScene(const Scene &scene, const Projection &projection)
     return frame;
 }
 
-inline Frame layout(const SurfaceCamera &camera, const QSizeF &size, const LinearArray2D<double> &grid,
+inline Frame layout(const SurfaceCamera &camera, const QSizeF &size, const SurfaceGrid &grid,
                     double zMin, double zMax, const QFont &font)
 {
     if (size.width() < 1 || size.height() < 1 || grid.rows < 2 || grid.columns < 2 || !grid.hasValidAxes()) return {};
@@ -274,7 +274,7 @@ private:
         update();
     }
     SurfaceCamera camera_;
-    LinearSpectrumPtr grid_ = std::make_shared<const LinearArray2D<double>>();
+    std::shared_ptr<const SurfaceGrid> grid_ = std::make_shared<const SurfaceGrid>();
     double low_ = 0, high_ = 0;
     QFont font_;
     QColor foreground_, background_;

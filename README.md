@@ -1,3 +1,9 @@
+## 2026-11-20：轴配置迁入 SurfaceGrid（用户定）
+
+`SurfaceGrid` 从仅含行列数扩充为同时持有两条物理轴的起点与步长，并提供 `hasValidAxes`/`sameAxes`/`rowPosition`/`columnPosition`。功率谱创建配置、显示快照与坐标标注不再引用 Algorithm 的 `LinearArray2D`；`LinearSpectrumPtr` 替换为 `std::shared_ptr<const SurfaceGrid>`。数值仍通过 `std::span<const double>` 传入，轴对象只描述网格。渲染、抽稀、四束历史与取消链不变。
+
+验证：ChartCore build-current Release 零警告、CTest 4/4；主程序 Release 零警告、CTest 8/8、8 秒冒烟与基线一致。
+
 ## 2026-11-14：删除无用户的均匀抽稀重载（用户定）
 
 删除接收 LinearArray 的 thinUniform 薄转发及 ChartThinning.h 对 LinearArray.h 的包含。均匀抽稀统一接收起点、步进和数量；现有径向风、风羽及测试已经使用此入口，计算实现不变。曲面轴配置、谱页保活范围、四束历史、保存格式和取消链保持。本轮不推送，验证见主程序维护操作。

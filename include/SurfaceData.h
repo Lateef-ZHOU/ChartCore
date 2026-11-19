@@ -5,7 +5,7 @@
 
 // 绘制层的数值入口。行主序：行 = 距离门，列 = 频点；行列数须与实例网格一致，两条轴取创建配置，不再逐帧分配。
 // 短帧（含空帧）补零，长帧只取前 rows*columns 项，绝不续用上一帧的尾部（用户定）。
-inline std::optional<PreparedSurface> prepareSurface(std::span<const double> values, const LinearSpectrumPtr &axes, SurfaceGrid grid,
+inline std::optional<PreparedSurface> prepareSurface(std::span<const double> values, const std::shared_ptr<const SurfaceGrid> &axes, SurfaceGrid grid,
                                                      double low, double high)
 {
     if (grid.rows < 2 || grid.columns < 2 || axes->rows != grid.rows || axes->columns != grid.columns
