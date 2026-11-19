@@ -273,14 +273,14 @@ public:
     // 首帧前只生成显示零平面，不分配虚构的业务功率谱。
     Q_INVOKABLE bool setEmptyData(double low, double high) { return setValues({}, low, high); }
 
-    template<DAQChannelSpec Spec>
-    bool setSpectrum(const std::shared_ptr<const Spectrum<Spec>> &values, double low, double high)
+    template<DAQParams P>
+    bool setSpectrum(const std::shared_ptr<const Spectrum<P>> &values, double low, double high)
     {
         if (!values) return false;
         // QML 创建配置仍是运行期边界，不能将另一规格的数组按本图尺寸重排。
-        if (axes_->rows != Spec::rangeGateCount || axes_->columns != Spec::frequencyBinCount
-            || axes_->rowStart != Spec::rangeStartM || axes_->rowStep != Spec::rangeStepM
-            || axes_->columnStart != Spec::frequencyStartMHz || axes_->columnStep != Spec::frequencyStepMHz)
+        if (axes_->rows != P.rangeGateCount || axes_->columns != P.frequencyBinCount
+            || axes_->rowStart != P.rangeStartM || axes_->rowStep != P.rangeStepM
+            || axes_->columnStart != P.frequencyStartMHz || axes_->columnStep != P.frequencyStepMHz)
             return false;
         return setValues({values->begin(), values->size()}, low, high);
     }

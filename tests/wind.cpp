@@ -94,11 +94,10 @@ public:
         return {vertices, vertices + data->vertexCount()};
     }
 };
-struct FixedSpec {
-    static constexpr const char *name = "fixed";
-    static constexpr int rangeGateCount = 3, frequencyBinCount = 1;
-    static constexpr double rangeStartM = 10, rangeStepM = 15, frequencyStartMHz = 0,
-        frequencyStepMHz = 1, wavelengthM = 1.55e-6, zeroWindMHz = 80;
+inline constexpr DAQParams FixedSpec{
+    .wavelengthM = 1.55e-6, .zeroWindMHz = 80,
+    .rangeStartM = 10, .rangeStepM = 15, .frequencyStartMHz = 0, .frequencyStepMHz = 1,
+    .rangeGateCount = 3, .frequencyBinCount = 1,
 };
 using FixedFrame = VerticalWindProfileUnit<FixedSpec>;
 using FixedFramePtr = std::shared_ptr<const FixedFrame>;
@@ -111,11 +110,15 @@ public:
     using WindBarbItem::columnStart;
     using WindBarbItem::columnStep;
 };
-template<int Count, int Start, int Step> struct RadialSpec : FixedSpec {
-    static constexpr int rangeGateCount = Count;
-    static constexpr double rangeStartM = Start, rangeStepM = Step;
-};
-using QmlSpec = RadialSpec<8, 0, 15>;
+template<int Count, int Start, int Step>
+inline constexpr auto RadialSpec = [] {
+    auto params = FixedSpec;
+    params.rangeGateCount = Count;
+    params.rangeStartM = Start;
+    params.rangeStepM = Step;
+    return params;
+}();
+inline constexpr auto QmlSpec = RadialSpec<8, 0, 15>;
 using QmlWind = std::shared_ptr<const RadialWind<QmlSpec>>;
 using QmlCnr = std::shared_ptr<const CNR<QmlSpec>>;
 class TestRadialPlot : public Wind2DItem {

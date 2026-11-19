@@ -14,12 +14,12 @@ struct DAQChartSpecification
     static constexpr double kBarbWindowSec = 24.0 * 3600.0; // 风羽图的设计时间窗（秒）
     static constexpr double kBarbColumnSec = 20.0;          // 风羽图的名义列距（秒）
 
-    // 小规格表交 QML 装配；设备不拥有图表或显示缓存。Spec 提供静态网格：行 = 斜距（m）、列 = 频率（MHz）。
-    template<DAQChannelSpec Spec>
+    // 小规格表交 QML 装配。静态网格的行是斜距（m），列是频率（MHz）。
+    template<DAQParams P>
     static QVariantMap make(int windMin, int windMax, double powerMax)
     {
-        return {{"rows", Spec::rangeGateCount}, {"columns", Spec::frequencyBinCount}, {"rangeStart", Spec::rangeStartM}, {"gateSpacing", Spec::rangeStepM},
-                {"freqStart", Spec::frequencyStartMHz}, {"freqStep", Spec::frequencyStepMHz},
+        return {{"rows", P.rangeGateCount}, {"columns", P.frequencyBinCount}, {"rangeStart", P.rangeStartM}, {"gateSpacing", P.rangeStepM},
+                {"freqStart", P.frequencyStartMHz}, {"freqStep", P.frequencyStepMHz},
                 {"windMin", windMin}, {"windMax", windMax}, {"powerMax", powerMax},
                 {"cnrMin", kPlt2dCnrMin}, {"cnrMax", kPlt2dCnrMax},
                 {"barbWindow", kBarbWindowSec}, {"barbColumn", kBarbColumnSec}};

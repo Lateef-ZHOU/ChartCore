@@ -105,12 +105,12 @@ public:
         yAxis_.hi = rows;
     }
 
-    template<DAQChannelSpec Spec>
-    void setRadialWind(const std::shared_ptr<const RadialWind<Spec>> &frame)
-    { if (frame) setValues({frame->begin(), frame->size()}, Spec::rangeStartM, Spec::rangeStepM); }
-    template<DAQChannelSpec Spec>
-    void setCNR(const std::shared_ptr<const CNR<Spec>> &frame)
-    { if (frame) setValues({frame->begin(), frame->size()}, Spec::rangeStartM, Spec::rangeStepM); }
+    template<DAQParams P>
+    void setRadialWind(const std::shared_ptr<const RadialWind<P>> &frame)
+    { if (frame) setValues({frame->begin(), frame->size()}, P.rangeStartM, P.rangeStepM); }
+    template<DAQParams P>
+    void setCNR(const std::shared_ptr<const CNR<P>> &frame)
+    { if (frame) setValues({frame->begin(), frame->size()}, P.rangeStartM, P.rangeStepM); }
 private:
     // 只有绘制时转为借用数值；配置由 QML 创建，仍须核对其与业务规格一致。
     void setValues(std::span<const double> data, double start, double step)
