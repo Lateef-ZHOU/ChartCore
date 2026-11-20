@@ -2,6 +2,13 @@
 #include <QVariantMap>
 #include "DAQFamily/DAQChannelSpec.h"
 
+// 只借用型号的静态距离门边界，QML 仅转交此值。
+struct StaticRangeEdges
+{
+    std::span<const double> values;
+};
+Q_DECLARE_METATYPE(StaticRangeEdges)
+
 // 型号交入尺寸与数据范围；公共绘图默认值不属于设备族能力。
 struct DAQChartSpecification
 {
@@ -15,14 +22,26 @@ struct DAQChartSpecification
     static constexpr double kBarbColumnSec = 20.0;          // 风羽图的名义列距（秒）
 
     // 小规格表交 QML 装配。静态网格的行是斜距（m），列是频率（MHz）。
-    template<DAQParams P>
+    template<auto P>
     static QVariantMap make(int windMin, int windMax, double powerMax)
     {
-        return {{"rows", P.rangeGateCount}, {"columns", P.frequencyBinCount}, {"rangeStart", P.rangeStartM}, {"gateSpacing", P.rangeStepM},
+        QVariantMap result{{"rows", P.rangeGateCount}, {"columns", P.frequencyBinCount},
                 {"freqStart", P.frequencyStartMHz}, {"freqStep", P.frequencyStepMHz},
                 {"windMin", windMin}, {"windMax", windMax}, {"powerMax", powerMax},
                 {"cnrMin", kPlt2dCnrMin}, {"cnrMax", kPlt2dCnrMax},
                 {"barbWindow", kBarbWindowSec}, {"barbColumn", kBarbColumnSec}};
+        result.insert("rangeStop", P.rangeStopM());
+        if constexpr (P.uniformRange)
+        {
+            result.insert("rangeStart", P.rangeStartM);
+            result.insert("gateSpacing", P.rangeStepM);
+        }
+        else
+        {
+            result.insert("rangeEdges", QVariant::fromValue(StaticRangeEdges{P.range.edges}));
+            result.insert("spectrumByGate", true);
+        }
+        return result;
     }
 
 };

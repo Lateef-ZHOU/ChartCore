@@ -9,10 +9,12 @@ RowLayout {
     required property Wind2DItem cnrPlot
     required property var specification
     readonly property var windConfiguration: ({ rows: root.specification.rows, rangeStart: root.specification.rangeStart,
-            gateSpacing: root.specification.gateSpacing, minimum: root.specification.windMin, maximum: root.specification.windMax,
+            gateSpacing: root.specification.gateSpacing, rangeEdges: root.specification.rangeEdges,
+            minimum: root.specification.windMin, maximum: root.specification.windMax,
             name: qsTr("风速"), title: qsTr("风速 (m/s)"), color: "#1e90ff", rightAxis: false })
     readonly property var cnrConfiguration: ({ rows: root.specification.rows, rangeStart: root.specification.rangeStart,
-            gateSpacing: root.specification.gateSpacing, minimum: root.specification.cnrMin, maximum: root.specification.cnrMax,
+            gateSpacing: root.specification.gateSpacing, rangeEdges: root.specification.rangeEdges,
+            minimum: root.specification.cnrMin, maximum: root.specification.cnrMax,
             name: "CNR", title: "CNR (dB)", color: "#ff6432", rightAxis: true })
     Component.onCompleted: {
         windPlot.objectName = "windSpeed"; windPlot.parent = windSlot; windPlot.anchors.fill = windSlot

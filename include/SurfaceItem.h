@@ -249,7 +249,7 @@ public:
     QVariantMap configuration() const
     {
         return {{"rows", axes_->rows}, {"columns", axes_->columns}, {"rowStart", axes_->rowStart}, {"rowStep", axes_->rowStep},
-                {"columnStart", axes_->columnStart}, {"columnStep", axes_->columnStep}};
+                {"columnStart", axes_->columnStart}, {"columnStep", axes_->columnStep}, {"gateAxis", axes_->gateAxis}};
     }
     void setConfiguration(const QVariantMap &value)
     {
@@ -259,12 +259,13 @@ public:
             return;
         }
         const SurfaceGrid grid{value.value("rows").toInt(), value.value("columns").toInt()};
-        // 创建时固定坐标轴：行 = 斜距、列 = 频率；收到谱时核对其 Spec 与配置一致。
+        // 创建时固定坐标轴，收到谱时核对其规格与配置一致。
         auto axes = std::make_shared<const SurfaceGrid>(grid.rows, grid.columns, value.value("rowStart").toDouble(),
                                          value.value("rowStep").toDouble(), value.value("columnStart").toDouble(),
-                                         value.value("columnStep").toDouble());
+                                         value.value("columnStep").toDouble(), value.value("gateAxis").toBool());
         if (grid.rows < 2 || grid.columns < 2 || qint64(grid.rows) * grid.columns > std::numeric_limits<int>::max() / 6
-            || !value.value("rowStart").isValid() || !value.value("columnStart").isValid() || !axes->hasValidAxes())
+            || !value.value("rowStart").isValid() || !value.value("columnStart").isValid() || !axes->hasValidAxes()
+            || (axes->gateAxis && (axes->rowStart != 0.0 || axes->rowStep != 1.0)))
             qFatal("Invalid surface grid.");
         grid_ = grid;
         axes_ = axes;
@@ -273,15 +274,22 @@ public:
     // 首帧前只生成显示零平面，不分配虚构的业务功率谱。
     Q_INVOKABLE bool setEmptyData(double low, double high) { return setValues({}, low, high); }
 
-    template<DAQParams P>
+    template<auto P>
     bool setSpectrum(const std::shared_ptr<const Spectrum<P>> &values, double low, double high)
     {
         if (!values) return false;
         // QML 创建配置仍是运行期边界，不能将另一规格的数组按本图尺寸重排。
         if (axes_->rows != P.rangeGateCount || axes_->columns != P.frequencyBinCount
-            || axes_->rowStart != P.rangeStartM || axes_->rowStep != P.rangeStepM
             || axes_->columnStart != P.frequencyStartMHz || axes_->columnStep != P.frequencyStepMHz)
             return false;
+        if (!axes_->gateAxis)
+        {
+            if constexpr (P.uniformRange)
+            {
+                if (axes_->rowStart != P.rangeStartM || axes_->rowStep != P.rangeStepM) return false;
+            }
+            else return false;
+        }
         return setValues({values->begin(), values->size()}, low, high);
     }
 private:

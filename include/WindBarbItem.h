@@ -126,6 +126,8 @@ protected:
     virtual RxTime columnTime(int i) const = 0;
     virtual double columnStart(int i) const = 0;
     virtual double columnStep(int i) const = 0;
+    virtual double columnHeightScale(int i) const = 0;
+    virtual std::span<const double> rangeEdges() const = 0;
     virtual std::span<const std::optional<LinAlg::Vec3>> columnValues(int i) const = 0;
     virtual void resetHistory(std::size_t capacity) = 0;
     int minimumLayers() const { return heightBins_; }
@@ -207,21 +209,28 @@ protected:
 
         // ── 把这一帧要画的风羽逐根走一遍 ─────────────────────────────────────────────────
         // 数顶点与写顶点**共用这一个遍历**：两趟必须选中同一批风羽，筛选各写一遍就是缓冲区溢出的引信。
-        // 两轴按公共桶选首值；高度由均匀参数反算。
+        // 两轴按公共桶选首值。
+        const auto edges = rangeEdges();
         const auto eachBarb = [&](auto &&visit) {
             for (const int c : binPick_)
             {
                 const auto values = columnValues(c);
                 const double start = columnStart(c), step = columnStep(c);
+                const double scale = edges.empty() ? 0.0 : columnHeightScale(c);
+                const auto height = [&](std::size_t k) { return edges.empty() ? start + k * step : edges[k] * scale; };
                 const double x = xAxis_.toPixel((timeBinOf(timeAt(c)) + 0.5) * binSec, plot.left(), plot.right());
-                ChartThinning::thinUniform(start, step, static_cast<int>(values.size()), yAxis_.lo, yAxis_.hi, binM, 1, gatePick_);
+                if (edges.empty())
+                    ChartThinning::thinUniform(start, step, static_cast<int>(values.size()), yAxis_.lo, yAxis_.hi, binM, 1, gatePick_);
+                else
+                    ChartThinning::thinIrregular(std::views::iota(std::size_t{0}, values.size()) | std::views::transform(height),
+                                                 yAxis_.lo, yAxis_.hi, binM, 1, gatePick_);
                 for (const int k : gatePick_)
                 {
                     const auto &wind = values[k];
                     if (!wind) continue; // 桶里的首门缺测：这一格不画，不往后找。
                     const double s = std::hypot(wind->x(), wind->y());
                     if (!std::isfinite(s)) continue;
-                    const double mid = (std::floor((start + k * step) / binM) + 0.5) * binM;
+                    const double mid = (std::floor(height(k) / binM) + 0.5) * binM;
                     if (mid + halfY < yAxis_.lo || mid - halfY > yAxis_.hi)
                         continue;
                     visit(x, yAxis_.toPixel(mid, plot.bottom(), plot.top()), s, *wind);
@@ -283,8 +292,11 @@ private:
     [[nodiscard]] double highest() const
     {
         double result = -std::numeric_limits<double>::infinity();
+        const auto edges = rangeEdges();
         for (int i = 0; i < columnCount(); ++i) {
-            result = std::max(result, columnStart(i) + columnStep(i) * (columnValues(i).size() - 1));
+            const auto last = columnValues(i).size() - 1;
+            result = std::max(result, edges.empty() ? columnStart(i) + columnStep(i) * last
+                                                    : columnHeightScale(i) * edges[last]);
         }
         return result;
     }
@@ -484,6 +496,10 @@ private:
 template<ImmutableWallClockFrame Frame>
 class WindBarbItem : public WindBarbChart
 {
+    static constexpr bool uniformGrid = [] {
+        if constexpr (requires { Frame::params.uniformRange; }) return Frame::params.uniformRange;
+        else return true;
+    }();
 public:
     explicit WindBarbItem(QQuickItem *parent = nullptr)
         : WindBarbItem(QVariantMap{{"heightBins", 1}, {"windowSeconds", 1.0},
@@ -494,10 +510,15 @@ public:
     {
         if (!profile) return;
         const auto values = profile->values();
-        const double start = profile->heightStartM(), step = profile->heightStepM();
-        if (values.empty() || !std::isfinite(start) || !std::isfinite(step) || step <= 0.0
-            || !std::isfinite(start + step * (values.size() - 1))
-            || values.size() < static_cast<std::size_t>(minimumLayers())) return;
+        if (values.empty() || values.size() < static_cast<std::size_t>(minimumLayers())
+            || !std::isfinite(profile->heightStartM())) return;
+        if constexpr (uniformGrid)
+        {
+            const auto spacing = profile->heightStepM();
+            if (!std::isfinite(spacing) || spacing <= 0.0
+                || !std::isfinite(profile->heightStartM() + spacing * (values.size() - 1))) return;
+        }
+        else if (!(profile->heightScale() > 0.0) || !std::isfinite(profile->heightAt(values.size() - 1))) return;
         const auto at = profile->at;
         if (!history_->append(std::move(profile))) return;
         columnAccepted(at);
@@ -506,7 +527,21 @@ protected:
     int columnCount() const override { return static_cast<int>(history_->size()); }
     RxTime columnTime(int i) const override { return history_->at(i)->at; }
     double columnStart(int i) const override { return history_->at(i)->heightStartM(); }
-    double columnStep(int i) const override { return history_->at(i)->heightStepM(); }
+    double columnStep(int i) const override
+    {
+        if constexpr (uniformGrid) return history_->at(i)->heightStepM();
+        else return 0.0;
+    }
+    double columnHeightScale(int i) const override
+    {
+        if constexpr (uniformGrid) return 0.0;
+        else return history_->at(i)->heightScale();
+    }
+    std::span<const double> rangeEdges() const override
+    {
+        if constexpr (uniformGrid) return {};
+        else return Frame::params.range.edges;
+    }
     std::span<const std::optional<LinAlg::Vec3>> columnValues(int i) const override
     { return history_->at(i)->values(); }
     void resetHistory(std::size_t capacity) override { history_ = std::make_unique<History>(capacity); }

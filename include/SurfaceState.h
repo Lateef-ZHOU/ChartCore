@@ -23,6 +23,7 @@ struct SurfaceGrid
     double rowStep = 0.0;
     double columnStart = 0.0;
     double columnStep = 0.0;
+    bool gateAxis = false;
 
     int pointCount() const { return rows * columns; }
     [[nodiscard]] double rowPosition(const std::size_t row) const { return rowStart + static_cast<double>(row) * rowStep; }
@@ -38,7 +39,8 @@ struct SurfaceGrid
     // 同一网格：行列数与两条轴的起点、步长都相同，不比较谱数据（本类型不承载元素）。
     [[nodiscard]] bool sameAxes(const SurfaceGrid &other) const
     {
-        return rows == other.rows && columns == other.columns && rowStart == other.rowStart && rowStep == other.rowStep
+        return rows == other.rows && columns == other.columns && gateAxis == other.gateAxis
+               && rowStart == other.rowStart && rowStep == other.rowStep
                && columnStart == other.columnStart && columnStep == other.columnStep;
     }
     bool operator==(const SurfaceGrid &) const = default;

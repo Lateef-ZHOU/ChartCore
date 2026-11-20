@@ -1,3 +1,7 @@
+## 2026-11-20：非均匀距离门图表（用户定）
+
+非均匀径向风和 CNR 共用型号的静态距离门边界，按实际斜距定位、抽稀和拾取。风羽按每列的仰角投影同一距离表，并按投影高度抽稀。曲面创建配置支持按距离门下标标注，用于 CDL5 功率谱。Windows Release CTest 4/4 通过。
+
 ## 2026-11-20：轴配置迁入 SurfaceGrid（用户定）
 
 `SurfaceGrid` 从仅含行列数扩充为同时持有两条物理轴的起点与步长，并提供 `hasValidAxes`/`sameAxes`/`rowPosition`/`columnPosition`。功率谱创建配置、显示快照与坐标标注不再引用 Algorithm 的 `LinearArray2D`；`LinearSpectrumPtr` 替换为 `std::shared_ptr<const SurfaceGrid>`。数值仍通过 `std::span<const double>` 传入，轴对象只描述网格。渲染、抽稀、四束历史与取消链不变。
