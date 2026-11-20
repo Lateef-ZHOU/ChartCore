@@ -21,6 +21,12 @@ qt_add_qml_module(LidarChartCore STATIC URI Lidar.Charts VERSION 1.0
     IMPORT_PATH "${ui_import_root}"
     SOURCES ${headers} QML_FILES ${views})
 add_library(Lidar::ChartCore ALIAS LidarChartCore)
+
+# 只暴露数据容器与轴头的接口目标：核心算法库用它取容器，不引入 Qt Quick。
+add_library(LidarChartData INTERFACE)
+target_include_directories(LidarChartData INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(LidarChartData INTERFACE Lidar::FamilyModels)
+add_library(Lidar::ChartData ALIAS LidarChartData)
 target_include_directories(LidarChartCore PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_compile_features(LidarChartCore PUBLIC cxx_std_20)
 target_link_libraries(LidarChartCore PUBLIC Lidar::FamilyModels Lidar::UICore Qt6::Quick Qt6::GuiPrivate)

@@ -8,7 +8,7 @@
 #include "SurfaceAxes.h"
 #include "SurfaceData.h"
 #include "DAQChartSpecification.h"
-#include "DAQFamily/DAQChannelSpec.h"
+#include "DataArrays.h"
 #include <QColor>
 #include <QFile>
 #include <QMouseEvent>
@@ -281,7 +281,7 @@ public:
     Q_INVOKABLE bool setEmptyData(double low, double high) { return setValues({}, low, high); }
 
     template<class Range, class Frequency>
-    bool setSpectrum(const std::shared_ptr<const Spectrum<Range, Frequency>> &values, double low, double high)
+    bool setSpectrum(const std::shared_ptr<const Grid2D<Range, Frequency>> &values, double low, double high)
     {
         if (!values) return false;
         static_assert(Frequency::uniform, "绘图列轴暂只支持均匀频率");

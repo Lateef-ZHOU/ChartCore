@@ -1,4 +1,4 @@
-#include "DAQFamily/DAQChannelSpec.h"
+#include "DataArrays.h"
 #include "SurfaceItem.h"
 #include "Wind2DItem.h"
 #include <QEvent>
@@ -11,11 +11,11 @@
 #include <QtQml/QQmlExtensionPlugin>
 Q_IMPORT_QML_PLUGIN(LidarUIPlugin)
 Q_IMPORT_QML_PLUGIN(LidarChartsPlugin)
-using TestRange = UniformMapping<0.0, 60.0, 4>;
-using TestFrequency = UniformMapping<0.0, 1.0, 3>;
-using TestSpectrum = std::shared_ptr<const Spectrum<TestRange, TestFrequency>>;
-using WrongRange = UniformMapping<0.0, 15.0, 4>;
-using WrongSurface = Spectrum<WrongRange, TestFrequency>;
+using TestRange = LinearMapping<0.0, 60.0, 4>;
+using TestFrequency = LinearMapping<0.0, 1.0, 3>;
+using TestSpectrum = std::shared_ptr<const Grid2D<TestRange, TestFrequency>>;
+using WrongRange = LinearMapping<0.0, 15.0, 4>;
+using WrongSurface = Grid2D<WrongRange, TestFrequency>;
 class TestSurface : public SurfaceItem {
     Q_OBJECT
 public:
@@ -54,14 +54,14 @@ Item {
     std::unique_ptr<QObject> object(component.create());
     if (!object) { qCritical() << component.errors(); return 1; }
     auto *plot = object->findChild<TestSurface *>();
-    if (!plot || !plot->setData(std::make_shared<const Spectrum<TestRange, TestFrequency>>(), 0, 100)) return 16;
+    if (!plot || !plot->setData(std::make_shared<const Grid2D<TestRange, TestFrequency>>(), 0, 100)) return 16;
     const auto revision = plot->surface().revision;
     if (plot->setSpectrum(std::make_shared<const WrongSurface>(), 0, 100)
         || plot->surface().revision != revision) return 17;
-    auto frame = std::make_shared<Spectrum<TestRange, TestFrequency>>();
+    auto frame = std::make_shared<Grid2D<TestRange, TestFrequency>>();
     std::fill(frame->begin(), frame->end(), 7.0);
     const double *address = &(*frame)[0];
-    std::weak_ptr<const Spectrum<TestRange, TestFrequency>> weak = frame;
+    std::weak_ptr<const Grid2D<TestRange, TestFrequency>> weak = frame;
     {
         // 排队消息先保活，QML 隐藏页随后接管同一只读份额。
         const QVariant value = QVariant::fromValue(TestSpectrum(std::move(frame)));

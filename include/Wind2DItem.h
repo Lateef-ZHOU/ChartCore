@@ -17,7 +17,7 @@
 #include <QString>
 #include <QVector>
 
-#include "DAQFamily/DAQChannelSpec.h"
+#include "DataArrays.h"
 #include "DAQChartSpecification.h"
 #include "ChartThinning.h"
 #include <span>
@@ -119,10 +119,10 @@ public:
     }
 
     template<class Range>
-    void setRadialWind(const std::shared_ptr<const RadialWind<Range>> &frame)
+    void setRadialWind(const std::shared_ptr<const Array1D<Range>> &frame)
     { if (frame) setValues<Range>({frame->begin(), frame->size()}); }
     template<class Range>
-    void setCNR(const std::shared_ptr<const CNR<Range>> &frame)
+    void setCNR(const std::shared_ptr<const Array1D<Range>> &frame)
     { if (frame) setValues<Range>({frame->begin(), frame->size()}); }
 private:
     // 只有绘制时转为借用数值；配置由 QML 创建，仍须核对其与业务规格一致。

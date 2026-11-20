@@ -1,6 +1,6 @@
 #pragma once
 #include <QVariantMap>
-#include "DAQFamily/DAQChannelSpec.h"
+#include "AxisMapping.h"
 
 // 只借用型号的静态距离门边界，QML 仅转交此值。
 struct StaticRangeEdges

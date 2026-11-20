@@ -1,4 +1,4 @@
-#include "DAQFamily/DAQChannelSpec.h"
+#include "DataArrays.h"
 #include <span>
 #include <utility>
 #include <optional>
@@ -54,16 +54,16 @@ public:
 // 测试绘图的最小帧契约，刻意允许运行时非法网格；真实静态帧另有排队测试。
 struct ChartFrameFixture {
     const std::chrono::system_clock::time_point at;
-    const double start, step;
+    const double first, spacing;
     const std::vector<std::optional<LinAlg::Vec3>> winds;
-    ChartFrameFixture(std::chrono::system_clock::time_point time, double first, double spacing,
+    ChartFrameFixture(std::chrono::system_clock::time_point time, double firstValue, double spacingValue,
         std::vector<std::optional<LinAlg::Vec3>> data)
-        : at(time), start(first), step(spacing), winds(std::move(data)) {}
+        : at(time), first(firstValue), spacing(spacingValue), winds(std::move(data)) {}
     DISABLE_COPY_MOVE(ChartFrameFixture)
     auto values() const & noexcept { return std::span<const std::optional<LinAlg::Vec3>>(winds); }
     auto values() const && = delete;
-    double heightStartM() const noexcept { return start; }
-    double heightStepM() const noexcept { return step; }
+    double start() const noexcept { return first; }
+    double step() const noexcept { return spacing; }
 };
 using TestWindFrame = std::shared_ptr<const ChartFrameFixture>;
 class TestWindBarb : public WindBarbItem<ChartFrameFixture>
@@ -94,8 +94,8 @@ public:
         return {vertices, vertices + data->vertexCount()};
     }
 };
-using FixedRange = UniformMapping<10.0, 15.0, 3>;
-using FixedFrame = VerticalWindProfileUnit<FixedRange>;
+using FixedRange = LinearMapping<10.0, 15.0, 3>;
+using FixedFrame = TimedArray1D<FixedRange, std::optional<LinAlg::Vec3>>;
 using FixedFramePtr = std::shared_ptr<const FixedFrame>;
 class FixedBarbProbe : public WindBarbItem<FixedFrame>
 {
@@ -107,10 +107,10 @@ public:
     using WindBarbItem::columnStep;
 };
 template<int Count, int Start, int Step>
-using RadialRange = UniformMapping<static_cast<double>(Start), static_cast<double>(Step), Count>;
+using RadialRange = LinearMapping<static_cast<double>(Start), static_cast<double>(Step), Count>;
 using QmlRange = RadialRange<8, 0, 15>;
-using QmlWind = std::shared_ptr<const RadialWind<QmlRange>>;
-using QmlCnr = std::shared_ptr<const CNR<QmlRange>>;
+using QmlWind = std::shared_ptr<const Array1D<QmlRange>>;
+using QmlCnr = std::shared_ptr<const Array1D<QmlRange>>;
 class TestRadialPlot : public Wind2DItem {
     Q_OBJECT
 public:
@@ -210,9 +210,9 @@ int main(int argc, char **argv)
     {
         UniformProbe item(profileConfig(0));
         item.setSize({600, 200});
-        auto values = filled<RadialWind<RadialRange<1000, 0, 60>>>(1);
+        auto values = filled<Array1D<RadialRange<1000, 0, 60>>>(1);
         (*values)[100] = nan; (*values)[101] = nan;
-        item.setRadialWind<RadialRange<1000, 0, 30>>(filled<RadialWind<RadialRange<1000, 0, 30>>>(1));
+        item.setRadialWind<RadialRange<1000, 0, 30>>(filled<Array1D<RadialRange<1000, 0, 30>>>(1));
         item.applyHover(100.5);
         check(item.hover()->text.contains("0.000"), "data on another grid rejected");
         item.setRadialWind<RadialRange<1000, 0, 60>>(values);
@@ -225,7 +225,7 @@ int main(int argc, char **argv)
         check(item.configuration().value("rangeStart").toDouble() == 0, "range start is part of the creation configuration");
         UniformProbe shifted(profileConfig(30));
         shifted.setSize({600, 200});
-        shifted.setRadialWind<RadialRange<1000, 30, 60>>(filled<RadialWind<RadialRange<1000, 30, 60>>>(1));
+        shifted.setRadialWind<RadialRange<1000, 30, 60>>(filled<Array1D<RadialRange<1000, 30, 60>>>(1));
         shifted.applyHover(2.5);
         check(shifted.hover()->text.contains("150 m"), "explicit range start shifts every gate");
     }
@@ -275,7 +275,7 @@ int main(int argc, char **argv)
             FixedBarbProbe item(barbConfig());
             QObject::connect(&queuedSource, &Source::fixedColumn, &item,
                 [&](const FixedFramePtr &frame) { item.appendColumn(frame); }, Qt::QueuedConnection);
-            auto filling = std::make_shared<FixedFrame>(now, 30.0);
+            auto filling = std::make_shared<FixedFrame>(now, 0.5);
             (*filling)[0] = LinAlg::Vec3{0, 0, 0};
             (*filling)[2] = LinAlg::Vec3{3, 4, -1};
             const auto *data = filling->data();
@@ -292,9 +292,9 @@ int main(int argc, char **argv)
                 && std::abs(item.columnStep(0) - 7.5) < 1e-9,
                 "queued static frame retains identity, missing values, timestamp and projected grid");
             for (int i = 1; i <= 3; ++i)
-                item.appendColumn(std::make_shared<const FixedFrame>(now + std::chrono::seconds(i), 30));
+                item.appendColumn(std::make_shared<const FixedFrame>(now + std::chrono::seconds(i), 0.5));
             check(weak.expired(), "static frame released after history overwrites its last owner");
-            auto last = std::make_shared<const FixedFrame>(now + std::chrono::seconds(4), 30);
+            auto last = std::make_shared<const FixedFrame>(now + std::chrono::seconds(4), 0.5);
             weak = last;
             item.appendColumn(last);
         }
@@ -348,8 +348,8 @@ Window {
     auto *cnr = root->findChild<Wind2DItem *>("cnr");
     auto *barbs = root->findChild<TestWindBarb *>("barbs");
     check(window && wind && cnr && barbs, "QML registered types assemble");
-    auto windValues = filled<RadialWind<QmlRange>>(0);
-    auto cnrValues = filled<CNR<QmlRange>>(0);
+    auto windValues = filled<Array1D<QmlRange>>(0);
+    auto cnrValues = filled<Array1D<QmlRange>>(0);
     const std::array values{1., 3., 5., -2., 6., 12., 8., 4.};
     std::copy(values.begin(), values.end(), windValues->begin());
     std::copy(values.begin(), values.end(), cnrValues->begin());

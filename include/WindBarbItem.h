@@ -23,7 +23,7 @@
 #include <QSGGeometryNode>
 #include <QSGVertexColorMaterial>
 
-#include "DAQFamily/DAQChannelSpec.h"
+#include "DataArrays.h"
 #include "WallClockHistory.h"
 #include "ChartThinning.h"
 #include "ChartTicks.h"    // clock / decimal
@@ -521,7 +521,7 @@ class WindBarbItem : public WindBarbChart
 {
 
     static constexpr bool uniformGrid = [] {
-        if constexpr (requires { Frame::range.uniform; }) return Frame::range.uniform;
+        if constexpr (requires { Frame::axis.uniform; }) return Frame::axis.uniform;
         else return true;
     }();
 public:
@@ -535,14 +535,14 @@ public:
         if (!profile) return;
         const auto values = profile->values();
         if (values.empty() || values.size() < static_cast<std::size_t>(minimumLayers())
-            || !std::isfinite(profile->heightStartM())) return;
+            || !std::isfinite(profile->start())) return;
         if constexpr (uniformGrid)
         {
-            const auto spacing = profile->heightStepM();
+            const auto spacing = profile->step();
             if (!std::isfinite(spacing) || spacing <= 0.0
-                || !std::isfinite(profile->heightStartM() + spacing * (values.size() - 1))) return;
+                || !std::isfinite(profile->start() + spacing * (values.size() - 1))) return;
         }
-        else if (!(profile->heightScale() > 0.0) || !std::isfinite(profile->heightAt(values.size() - 1))) return;
+        else if (!(profile->scale > 0.0) || !std::isfinite(profile->position(values.size() - 1))) return;
         const auto at = profile->at;
         if (!history_->append(std::move(profile))) return;
         columnAccepted(at);
@@ -550,21 +550,21 @@ public:
 protected:
     int columnCount() const override { return static_cast<int>(history_->size()); }
     RxTime columnTime(int i) const override { return history_->at(i)->at; }
-    double columnStart(int i) const override { return history_->at(i)->heightStartM(); }
+    double columnStart(int i) const override { return history_->at(i)->start(); }
     double columnStep(int i) const override
     {
-        if constexpr (uniformGrid) return history_->at(i)->heightStepM();
+        if constexpr (uniformGrid) return history_->at(i)->step();
         else return 0.0;
     }
     double columnHeightScale(int i) const override
     {
         if constexpr (uniformGrid) return 0.0;
-        else return history_->at(i)->heightScale();
+        else return history_->at(i)->scale;
     }
     std::span<const double> rangeEdges() const override
     {
         if constexpr (uniformGrid) return {};
-        else return Frame::range.edges;
+        else return Frame::axis.edges;
     }
     std::span<const std::optional<LinAlg::Vec3>> columnValues(int i) const override
     { return history_->at(i)->values(); }
