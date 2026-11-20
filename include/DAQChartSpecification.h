@@ -9,6 +9,10 @@ struct StaticRangeEdges
 };
 Q_DECLARE_METATYPE(StaticRangeEdges)
 
+// 绘图按递增轴定位与抽稀；映射本身允许单调递减，但图页只收递增轴。
+template<class T>
+concept IncreasingAxis = MappingLike<T> && (T::uniform || T::at(1) > T::at(0));
+
 // 型号交入尺寸与数据范围；公共绘图默认值不属于设备族能力。
 struct DAQChartSpecification
 {
@@ -21,8 +25,9 @@ struct DAQChartSpecification
     static constexpr double kBarbWindowSec = 24.0 * 3600.0; // 风羽图的设计时间窗（秒）
     static constexpr double kBarbColumnSec = 20.0;          // 风羽图的名义列距（秒）
 
+
     // 小规格表交 QML 装配。静态网格的行是斜距（m），列是频率（MHz）。
-    template<MappingLike Range, MappingLike Frequency>
+    template<class Range, class Frequency> requires IncreasingAxis<Range> && IncreasingAxis<Frequency>
     static QVariantMap make(int windMin, int windMax, double powerMax)
     {
         static_assert(Frequency::uniform, "绘图列轴暂只支持均匀频率");

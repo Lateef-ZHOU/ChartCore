@@ -496,6 +496,14 @@ private:
 template<ImmutableWallClockFrame Frame>
 class WindBarbItem : public WindBarbChart
 {
+    // 帧带距离轴时要求递增：风羽按距离分桶抽稀；不带距离轴的帧不涉及这条。
+    static constexpr bool increasingRange = [] {
+        if constexpr (requires { Frame::range.uniform; })
+            return Frame::range.uniform || Frame::range.at(1) > Frame::range.at(0);
+        else
+            return true;
+    }();
+    static_assert(increasingRange, "风羽按递增距离轴抽稀");
     static constexpr bool uniformGrid = [] {
         if constexpr (requires { Frame::range.uniform; }) return Frame::range.uniform;
         else return true;
