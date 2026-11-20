@@ -34,7 +34,7 @@ inline std::optional<PreparedSurface> prepareSurface(std::span<const double> val
     }
     const double span = high - low;
     if (!std::isfinite(span) || span <= 0) return std::nullopt;
-    PreparedSurface result{.grid = grid,
+    PreparedSurface result{.heights = {}, .grid = grid,
         .axes = axes,
         .zMin = low, .zMax = high};
     result.heights.resize(count);
