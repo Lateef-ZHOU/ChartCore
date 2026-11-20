@@ -117,23 +117,23 @@ public:
         yAxis_.hi = last;
     }
 
-    template<auto P>
-    void setRadialWind(const std::shared_ptr<const RadialWind<P>> &frame)
-    { if (frame) setValues<P>({frame->begin(), frame->size()}); }
-    template<auto P>
-    void setCNR(const std::shared_ptr<const CNR<P>> &frame)
-    { if (frame) setValues<P>({frame->begin(), frame->size()}); }
+    template<class Range>
+    void setRadialWind(const std::shared_ptr<const RadialWind<Range>> &frame)
+    { if (frame) setValues<Range>({frame->begin(), frame->size()}); }
+    template<class Range>
+    void setCNR(const std::shared_ptr<const CNR<Range>> &frame)
+    { if (frame) setValues<Range>({frame->begin(), frame->size()}); }
 private:
     // 只有绘制时转为借用数值；配置由 QML 创建，仍须核对其与业务规格一致。
-    template<auto P>
+    template<class Range>
     void setValues(std::span<const double> data)
     {
         if (data.size() != static_cast<std::size_t>(rowCount_)) return;
-        if constexpr (P.uniformRange)
+        if constexpr (Range::uniform)
         {
-            if (!edges_.empty() || P.range.start != rangeStart_ || P.range.step != distPerBin_) return;
+            if (!edges_.empty() || Range::start != rangeStart_ || Range::step != distPerBin_) return;
         }
-        else if (edges_.data() != P.range.edges.data()) return;
+        else if (edges_.data() != Range::edges.data()) return;
         QList<QPointF> &points = series_[0].points;
         breaks_.clear();
         for (int k = 0; k < rowCount_; ++k)

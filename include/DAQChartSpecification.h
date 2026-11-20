@@ -22,23 +22,24 @@ struct DAQChartSpecification
     static constexpr double kBarbColumnSec = 20.0;          // 风羽图的名义列距（秒）
 
     // 小规格表交 QML 装配。静态网格的行是斜距（m），列是频率（MHz）。
-    template<auto P>
+    template<class Range, class Frequency> requires ValidGrid<Range, Frequency>
     static QVariantMap make(int windMin, int windMax, double powerMax)
     {
-        QVariantMap result{{"rows", P.rangeGateCount}, {"columns", P.frequencyBinCount},
-                {"freqStart", P.frequencyStartMHz}, {"freqStep", P.frequencyStepMHz},
+        static_assert(Frequency::uniform, "绘图列轴暂只支持均匀频率");
+        QVariantMap result{{"rows", Range::count}, {"columns", Frequency::count},
+                {"freqStart", Frequency::start}, {"freqStep", Frequency::step},
                 {"windMin", windMin}, {"windMax", windMax}, {"powerMax", powerMax},
                 {"cnrMin", kPlt2dCnrMin}, {"cnrMax", kPlt2dCnrMax},
                 {"barbWindow", kBarbWindowSec}, {"barbColumn", kBarbColumnSec}};
-        result.insert("rangeStop", P.rangeStopM());
-        if constexpr (P.uniformRange)
+        result.insert("rangeStop", Range::stop);
+        if constexpr (Range::uniform)
         {
-            result.insert("rangeStart", P.range.start);
-            result.insert("gateSpacing", P.range.step);
+            result.insert("rangeStart", Range::start);
+            result.insert("gateSpacing", Range::step);
         }
         else
         {
-            result.insert("rangeEdges", QVariant::fromValue(StaticRangeEdges{P.range.edges}));
+            result.insert("rangeEdges", QVariant::fromValue(StaticRangeEdges{Range::edges}));
         }
         return result;
     }

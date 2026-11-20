@@ -94,12 +94,8 @@ public:
         return {vertices, vertices + data->vertexCount()};
     }
 };
-inline constexpr DAQParams<UniformMapping<10.0, 15.0, 3>> FixedSpec{
-    .wavelengthM = 1.55e-6, .zeroWindMHz = 80,
-    .frequencyStartMHz = 0, .frequencyStepMHz = 1,
-    .frequencyBinCount = 1,
-};
-using FixedFrame = VerticalWindProfileUnit<FixedSpec>;
+using FixedRange = UniformMapping<10.0, 15.0, 3>;
+using FixedFrame = VerticalWindProfileUnit<FixedRange>;
 using FixedFramePtr = std::shared_ptr<const FixedFrame>;
 class FixedBarbProbe : public WindBarbItem<FixedFrame>
 {
@@ -111,13 +107,10 @@ public:
     using WindBarbItem::columnStep;
 };
 template<int Count, int Start, int Step>
-inline constexpr auto RadialSpec = DAQParams<UniformMapping<static_cast<double>(Start), static_cast<double>(Step), Count>>{
-    .wavelengthM = FixedSpec.wavelengthM, .zeroWindMHz = FixedSpec.zeroWindMHz,
-    .frequencyStartMHz = FixedSpec.frequencyStartMHz, .frequencyStepMHz = FixedSpec.frequencyStepMHz,
-    .frequencyBinCount = FixedSpec.frequencyBinCount};
-inline constexpr auto QmlSpec = RadialSpec<8, 0, 15>;
-using QmlWind = std::shared_ptr<const RadialWind<QmlSpec>>;
-using QmlCnr = std::shared_ptr<const CNR<QmlSpec>>;
+using RadialRange = UniformMapping<static_cast<double>(Start), static_cast<double>(Step), Count>;
+using QmlRange = RadialRange<8, 0, 15>;
+using QmlWind = std::shared_ptr<const RadialWind<QmlRange>>;
+using QmlCnr = std::shared_ptr<const CNR<QmlRange>>;
 class TestRadialPlot : public Wind2DItem {
     Q_OBJECT
 public:
@@ -210,12 +203,12 @@ int main(int argc, char **argv)
     {
         UniformProbe item(profileConfig(0));
         item.setSize({600, 200});
-        auto values = filled<RadialWind<RadialSpec<1000, 0, 60>>>(1);
+        auto values = filled<RadialWind<RadialRange<1000, 0, 60>>>(1);
         (*values)[100] = nan; (*values)[101] = nan;
-        item.setRadialWind<RadialSpec<1000, 0, 30>>(filled<RadialWind<RadialSpec<1000, 0, 30>>>(1));
+        item.setRadialWind<RadialRange<1000, 0, 30>>(filled<RadialWind<RadialRange<1000, 0, 30>>>(1));
         item.applyHover(100.5);
         check(item.hover()->text.contains("0.000"), "data on another grid rejected");
-        item.setRadialWind<RadialSpec<1000, 0, 60>>(values);
+        item.setRadialWind<RadialRange<1000, 0, 60>>(values);
         QList<int> selected;
         item.thin({}, QRectF(0, 0, 600, 200), selected);
         check(selected.size() < 1000, "uniform profile thins along distance Y");
@@ -225,7 +218,7 @@ int main(int argc, char **argv)
         check(item.configuration().value("rangeStart").toDouble() == 0, "range start is part of the creation configuration");
         UniformProbe shifted(profileConfig(30));
         shifted.setSize({600, 200});
-        shifted.setRadialWind<RadialSpec<1000, 30, 60>>(filled<RadialWind<RadialSpec<1000, 30, 60>>>(1));
+        shifted.setRadialWind<RadialRange<1000, 30, 60>>(filled<RadialWind<RadialRange<1000, 30, 60>>>(1));
         shifted.applyHover(2.5);
         check(shifted.hover()->text.contains("150 m"), "explicit range start shifts every gate");
     }
@@ -348,8 +341,8 @@ Window {
     auto *cnr = root->findChild<Wind2DItem *>("cnr");
     auto *barbs = root->findChild<TestWindBarb *>("barbs");
     check(window && wind && cnr && barbs, "QML registered types assemble");
-    auto windValues = filled<RadialWind<QmlSpec>>(0);
-    auto cnrValues = filled<CNR<QmlSpec>>(0);
+    auto windValues = filled<RadialWind<QmlRange>>(0);
+    auto cnrValues = filled<CNR<QmlRange>>(0);
     const std::array values{1., 3., 5., -2., 6., 12., 8., 4.};
     std::copy(values.begin(), values.end(), windValues->begin());
     std::copy(values.begin(), values.end(), cnrValues->begin());

@@ -497,7 +497,7 @@ template<ImmutableWallClockFrame Frame>
 class WindBarbItem : public WindBarbChart
 {
     static constexpr bool uniformGrid = [] {
-        if constexpr (requires { Frame::params.uniformRange; }) return Frame::params.uniformRange;
+        if constexpr (requires { Frame::range.uniform; }) return Frame::range.uniform;
         else return true;
     }();
 public:
@@ -540,7 +540,7 @@ protected:
     std::span<const double> rangeEdges() const override
     {
         if constexpr (uniformGrid) return {};
-        else return Frame::params.range.edges;
+        else return Frame::range.edges;
     }
     std::span<const std::optional<LinAlg::Vec3>> columnValues(int i) const override
     { return history_->at(i)->values(); }

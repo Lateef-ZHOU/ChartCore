@@ -11,17 +11,11 @@
 #include <QtQml/QQmlExtensionPlugin>
 Q_IMPORT_QML_PLUGIN(LidarUIPlugin)
 Q_IMPORT_QML_PLUGIN(LidarChartsPlugin)
-inline constexpr DAQParams<UniformMapping<0.0, 60.0, 4>> TestSpec{
-    .wavelengthM = 1.55e-6, .zeroWindMHz = 1,
-    .frequencyStartMHz = 0, .frequencyStepMHz = 1,
-    .frequencyBinCount = 3,
-};
-using TestSpectrum = std::shared_ptr<const Spectrum<TestSpec>>;
-inline constexpr DAQParams<UniformMapping<0.0, 15.0, 4>> WrongSurfaceSpec{
-    .wavelengthM = 1.55e-6, .zeroWindMHz = 1,
-    .frequencyStartMHz = 0, .frequencyStepMHz = 1,
-    .frequencyBinCount = 3,
-};
+using TestRange = UniformMapping<0.0, 60.0, 4>;
+using TestFrequency = DopplerMapping<UniformMapping<0.0, 1.0, 3>, 1.55e-6, 1.0>;
+using TestSpectrum = std::shared_ptr<const Spectrum<TestRange, TestFrequency>>;
+using WrongRange = UniformMapping<0.0, 15.0, 4>;
+using WrongSurface = Spectrum<WrongRange, TestFrequency>;
 class TestSurface : public SurfaceItem {
     Q_OBJECT
 public:
@@ -60,14 +54,14 @@ Item {
     std::unique_ptr<QObject> object(component.create());
     if (!object) { qCritical() << component.errors(); return 1; }
     auto *plot = object->findChild<TestSurface *>();
-    if (!plot || !plot->setData(std::make_shared<const Spectrum<TestSpec>>(), 0, 100)) return 16;
+    if (!plot || !plot->setData(std::make_shared<const Spectrum<TestRange, TestFrequency>>(), 0, 100)) return 16;
     const auto revision = plot->surface().revision;
-    if (plot->setSpectrum(std::make_shared<const Spectrum<WrongSurfaceSpec>>(), 0, 100)
+    if (plot->setSpectrum(std::make_shared<const WrongSurface>(), 0, 100)
         || plot->surface().revision != revision) return 17;
-    auto frame = std::make_shared<Spectrum<TestSpec>>();
+    auto frame = std::make_shared<Spectrum<TestRange, TestFrequency>>();
     std::fill(frame->begin(), frame->end(), 7.0);
     const double *address = &(*frame)[0];
-    std::weak_ptr<const Spectrum<TestSpec>> weak = frame;
+    std::weak_ptr<const Spectrum<TestRange, TestFrequency>> weak = frame;
     {
         // 排队消息先保活，QML 隐藏页随后接管同一只读份额。
         const QVariant value = QVariant::fromValue(TestSpectrum(std::move(frame)));

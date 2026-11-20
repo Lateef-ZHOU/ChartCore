@@ -280,20 +280,21 @@ public:
     // 首帧前只生成显示零平面，不分配虚构的业务功率谱。
     Q_INVOKABLE bool setEmptyData(double low, double high) { return setValues({}, low, high); }
 
-    template<auto P>
-    bool setSpectrum(const std::shared_ptr<const Spectrum<P>> &values, double low, double high)
+    template<class Range, class Frequency>
+    bool setSpectrum(const std::shared_ptr<const Spectrum<Range, Frequency>> &values, double low, double high)
     {
         if (!values) return false;
+        static_assert(Frequency::uniform, "绘图列轴暂只支持均匀频率");
         // QML 创建配置仍是运行期边界，不能将另一规格的数组按本图尺寸重排。
-        if (axes_->rows != P.rangeGateCount || axes_->columns != P.frequencyBinCount
-            || axes_->columnStart != P.frequencyStartMHz || axes_->columnStep != P.frequencyStepMHz)
+        if (axes_->rows != Range::count || axes_->columns != Frequency::count
+            || axes_->columnStart != Frequency::start || axes_->columnStep != Frequency::step)
             return false;
-        if constexpr (P.uniformRange)
+        if constexpr (Range::uniform)
         {
-            if (!axes_->rowEdges.empty() || axes_->rowStart != P.range.start || axes_->rowStep != P.range.step)
+            if (!axes_->rowEdges.empty() || axes_->rowStart != Range::start || axes_->rowStep != Range::step)
                 return false;
         }
-        else if (axes_->rowEdges.data() != P.range.edges.data()) return false;
+        else if (axes_->rowEdges.data() != Range::edges.data()) return false;
         return setValues({values->begin(), values->size()}, low, high);
     }
 private:
