@@ -286,19 +286,42 @@ private:
     {
         double result = std::numeric_limits<double>::infinity();
         for (int i = 0; i < columnCount(); ++i)
-            result = std::min(result, columnStart(i));
+            result = std::min(result, columnBottom(i));
         return result;
     }
     [[nodiscard]] double highest() const
     {
         double result = -std::numeric_limits<double>::infinity();
-        const auto edges = rangeEdges();
-        for (int i = 0; i < columnCount(); ++i) {
-            const auto last = columnValues(i).size() - 1;
-            result = std::max(result, edges.empty() ? columnStart(i) + columnStep(i) * last
-                                                    : columnHeightScale(i) * edges[last]);
-        }
+        for (int i = 0; i < columnCount(); ++i)
+            result = std::max(result, columnTop(i));
         return result;
+    }
+    // 一列的纵向端点：均匀轴取首末两点，非均匀轴在门坐标里取极值（距离轴允许递减）。
+    [[nodiscard]] double columnBottom(const int i) const
+    {
+        const auto values = columnValues(i);
+        if (values.empty()) return columnStart(i);
+        const auto edges = rangeEdges();
+        const double first = columnStart(i);
+        if (edges.empty())
+            return std::min(first, first + columnStep(i) * static_cast<double>(values.size() - 1));
+        const double scale = columnHeightScale(i);
+        double low = edges[0] * scale;
+        for (std::size_t k = 1; k < values.size(); ++k) low = std::min(low, edges[k] * scale);
+        return low;
+    }
+    [[nodiscard]] double columnTop(const int i) const
+    {
+        const auto values = columnValues(i);
+        if (values.empty()) return columnStart(i);
+        const auto edges = rangeEdges();
+        const double first = columnStart(i);
+        if (edges.empty())
+            return std::max(first, first + columnStep(i) * static_cast<double>(values.size() - 1));
+        const double scale = columnHeightScale(i);
+        double high = edges[0] * scale;
+        for (std::size_t k = 1; k < values.size(); ++k) high = std::max(high, edges[k] * scale);
+        return high;
     }
     [[nodiscard]] double timeAt(const int column) const
     {
@@ -496,14 +519,7 @@ private:
 template<ImmutableWallClockFrame Frame>
 class WindBarbItem : public WindBarbChart
 {
-    // 帧带距离轴时要求递增：风羽按距离分桶抽稀；不带距离轴的帧不涉及这条。
-    static constexpr bool increasingRange = [] {
-        if constexpr (requires { Frame::range.uniform; })
-            return Frame::range.uniform || Frame::range.at(1) > Frame::range.at(0);
-        else
-            return true;
-    }();
-    static_assert(increasingRange, "风羽按递增距离轴抽稀");
+
     static constexpr bool uniformGrid = [] {
         if constexpr (requires { Frame::range.uniform; }) return Frame::range.uniform;
         else return true;

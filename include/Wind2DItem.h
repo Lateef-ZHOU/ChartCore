@@ -6,6 +6,7 @@
 #include <QtQml/qqmlregistration.h>
 
 #include <algorithm>
+#include <functional>
 #include <cmath>
 #include <utility>
 #include <QColor>
@@ -166,12 +167,13 @@ protected:
     [[nodiscard]] std::pair<double, double> boundsY(double, double) const override
     {
         if (edges_.empty()) return {0.0, static_cast<double>(rowCount_)};
-        return {edges_.front(), edges_.back()};
+        const auto [lo, hi] = std::minmax(edges_.front(), edges_.back());
+        return {lo, hi};
     }
     // 界与视口、像素都无关 ⇒ 「满视口下的界宽」就是界宽本身。
     [[nodiscard]] double fullSpanX() const override { return static_cast<double>(valHi_ - valLo_); }
     [[nodiscard]] double fullSpanY() const override
-    { return edges_.empty() ? static_cast<double>(rowCount_) : edges_.back() - edges_.front(); }
+    { return edges_.empty() ? static_cast<double>(rowCount_) : std::abs(edges_.back() - edges_.front()); }
 
     // 刻度。横轴的视口单位就是要显示的量（m/s 或 dB），照数写。
     [[nodiscard]] QList<AxisText> ticksX(const double lo, const double hi, const int target) const override
@@ -193,8 +195,7 @@ protected:
         const QList<QPointF> &points = series_[0].points;
         if (points.isEmpty())
             return std::nullopt;
-        const int selected = edges_.empty() ? static_cast<int>(std::floor(dataY))
-            : static_cast<int>(std::upper_bound(edges_.begin(), edges_.end(), dataY) - edges_.begin()) - 1;
+        const int selected = edges_.empty() ? static_cast<int>(std::floor(dataY)) : edgeRow(dataY);
         const int row = std::clamp(selected, 0, rowCount_ - 1);
         const QPointF &p = points[row];
         return AxisText{p.y(), QStringLiteral("斜距  %1 m\n%2  %3")
@@ -203,6 +204,14 @@ protected:
                                     .arg(p.x(), 0, 'f', 3)};
     }
 
+    // 非均匀轴的门格：递增轴用 upper_bound-1，递减轴用 lower_bound(greater)-1；两端越界由调用方钳位。
+    [[nodiscard]] int edgeRow(const double dataY) const
+    {
+        if (edges_.front() < edges_.back())
+            return static_cast<int>(std::upper_bound(edges_.begin(), edges_.end(), dataY) - edges_.begin()) - 1;
+        return static_cast<int>(std::lower_bound(edges_.begin(), edges_.end(), dataY, std::greater<double>{})
+            - edges_.begin()) - 1;
+    }
 private:
     const QList<Series> &series() const override { return series_; }
     QList<Series> series_;
