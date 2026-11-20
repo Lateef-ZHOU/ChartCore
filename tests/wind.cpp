@@ -94,7 +94,7 @@ public:
         return {vertices, vertices + data->vertexCount()};
     }
 };
-inline constexpr DAQParams<UniformRangeMapping<10.0, 55.0, 3>> FixedSpec{
+inline constexpr DAQParams<UniformRangeMapping<10.0, 15.0, 3>> FixedSpec{
     .wavelengthM = 1.55e-6, .zeroWindMHz = 80,
     .frequencyStartMHz = 0, .frequencyStepMHz = 1,
     .frequencyBinCount = 1,
@@ -111,7 +111,7 @@ public:
     using WindBarbItem::columnStep;
 };
 template<int Count, int Start, int Step>
-inline constexpr auto RadialSpec = DAQParams<UniformRangeMapping<static_cast<double>(Start), static_cast<double>(Start + Step * Count), Count>>{
+inline constexpr auto RadialSpec = DAQParams<UniformRangeMapping<static_cast<double>(Start), static_cast<double>(Step), Count>>{
     .wavelengthM = FixedSpec.wavelengthM, .zeroWindMHz = FixedSpec.zeroWindMHz,
     .frequencyStartMHz = FixedSpec.frequencyStartMHz, .frequencyStepMHz = FixedSpec.frequencyStepMHz,
     .frequencyBinCount = FixedSpec.frequencyBinCount};
