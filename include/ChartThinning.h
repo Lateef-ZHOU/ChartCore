@@ -16,6 +16,7 @@
 // 归 QuickChartItem::binX / binY；本文件回答的是数据问题「哪几个样本活得下来」。
 //
 // 位置由调用方读取：折线的点、风羽帧的时刻与逐层高度都沿用原始坐标。
+// 位置须严格单调（递增或递减都可）；递减时桶号随下标不增，仍按相邻同桶合并。
 // 桶号 = floor(位置 / 桶长)，锚在绝对零点，两端各放宽一个桶。
 // ============================================================
 namespace ChartThinning
@@ -85,20 +86,32 @@ void thinIrregular(const Positions &positions, const double lo, const double hi,
     flush();
 }
 
-// 均匀序列：位置由起点、步长与数量确定，直接反算每桶末端，不读取数据数组。
-// 与非均匀版使用同一套绝对位置桶和两端哑桶；每个非空桶留首个或首末下标。
+// 均匀序列：位置由起点、步长与数量确定；递增轴直接反算每桶末端，递减轴按数据序扫描。
+// 与非均匀版使用同一套绝对位置桶和两端哑桶；每个非空桶留首个或首末下标，输出始终是升序下标（= 轴序）。
 // 输入由创建/推送入口保证有效；这里的空输出处理只针对空数据或尚未布局的视口。
 template <class Out>
 void thinUniform(const double start, const double step, const int count, const double lo, const double hi, const double binWidth,
                  const int perBin, Out &out)
 {
     out.clear();
-    if (count <= 0 || !(binWidth > 0.0) || !(step > 0.0)) return;
+    if (count <= 0 || !(binWidth > 0.0) || !std::isfinite(step) || step == 0.0) return;
     const double binLo = std::floor(lo / binWidth) - 1.0;
     const double binHi = std::floor(hi / binWidth) + 1.0;
     const auto bucket = [&](int i) {
         return std::clamp(std::floor((start + double(i) * step) / binWidth), binLo, binHi);
     };
+    if (step < 0.0) {
+        // 递减轴：桶号随下标单调不增，相邻同桶直接合并；正步长的反算跳桶在负步长下不成立。
+        for (int first = 0; first < count; ) {
+            const double bin = bucket(first);
+            int next = first + 1;
+            while (next < count && bucket(next) == bin) ++next;
+            out.push_back(first);
+            if (perBin > 1 && next - 1 != first) out.push_back(next - 1);
+            first = next;
+        }
+        return;
+    }
     for (int first = 0; first < count; ) {
         const double bin = bucket(first);
         int next = count;

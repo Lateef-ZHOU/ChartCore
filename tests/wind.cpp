@@ -144,22 +144,24 @@ static void thinning()
     for (int trial = 0; trial < 600; ++trial) {
         const int count = int(rng() % 301);
         const double start = (int(rng() % 400) - 200) * 0.1;
-        const double step = (1 + rng() % 50) * 0.1;
+        const double step = (1 + rng() % 50) * 0.1 * (rng() % 2 == 0 ? 1.0 : -1.0);
         const double width = std::pow(2.0, int(rng() % 12) - 5);
         const double lo = (int(rng() % 1000) - 400) * 0.1, hi = lo + width * (1 + rng() % 60);
         std::vector<double> positions;
         for (int i = 0; i < count; ++i) positions.push_back(start + i * step);
         for (int perBin : {1, 2}) {
-            // 独立逐点参考：先按实际桶号分组，再取每组首末。
-            std::map<double, std::vector<int>> groups;
-            for (int i = 0; i < count; ++i)
-                groups[std::clamp(std::floor(positions[i] / width),
-                    std::floor(lo / width) - 1, std::floor(hi / width) + 1)].push_back(i);
+            // 独立逐点参考：按实际桶号分段，每段取首末；两向都适用。
             std::vector<int> reference, uniform, irregular;
-            for (const auto &[bin, indices] : groups) {
-                (void)bin;
-                reference.push_back(indices.front());
-                if (perBin == 2 && indices.back() != indices.front()) reference.push_back(indices.back());
+            for (int first = 0; first < count; ) {
+                const auto bin = [&](int i) {
+                    return std::clamp(std::floor(positions[i] / width),
+                        std::floor(lo / width) - 1, std::floor(hi / width) + 1);
+                };
+                int next = first + 1;
+                while (next < count && bin(next) == bin(first)) ++next;
+                reference.push_back(first);
+                if (perBin == 2 && next - 1 != first) reference.push_back(next - 1);
+                first = next;
             }
             ChartThinning::thinUniform(start, step, count, lo, hi, width, perBin, uniform);
             ChartThinning::thinIrregular(positions, lo, hi, width, perBin, irregular);
@@ -175,6 +177,11 @@ static void thinning()
     const std::vector<double> sparse{0, 15, 30, 3000, 3060, 12000, 12150};
     ChartThinning::thinIrregular(sparse, 0, 13000, 1000, 1, picks);
     check(picks == std::vector<int>({0, 3, 5}), "irregular samples use metres rather than array stride");
+    const std::vector<double> descending{12150, 12000, 3060, 3000, 30, 15, 0};
+    ChartThinning::thinIrregular(descending, 0, 13000, 1000, 1, picks);
+    check(picks == std::vector<int>({0, 2, 4}), "decreasing axis thins by position");
+    ChartThinning::thinUniform(12150, -2025, 7, 0, 13000, 1000, 1, picks);
+    check(picks == std::vector<int>({0, 1, 2, 3, 4, 5, 6}), "decreasing uniform axis scans forward");
 }
 
 static QVariantMap profileConfig(double rangeStart)
