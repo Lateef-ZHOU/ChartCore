@@ -22,7 +22,7 @@ struct DAQChartSpecification
     static constexpr double kBarbColumnSec = 20.0;          // 风羽图的名义列距（秒）
 
     // 小规格表交 QML 装配。静态网格的行是斜距（m），列是频率（MHz）。
-    template<class Range, class Frequency> requires Mapping<Range> && Mapping<Frequency>
+    template<MappingLike Range, MappingLike Frequency>
     static QVariantMap make(int windMin, int windMax, double powerMax)
     {
         static_assert(Frequency::uniform, "绘图列轴暂只支持均匀频率");
