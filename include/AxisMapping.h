@@ -79,3 +79,16 @@ struct NonLinearMapping
 
     [[nodiscard]] static constexpr double at(std::size_t index) noexcept { return edges[index]; }
 };
+
+// 非单调表映射：逐点值任意，供风速等「值映射」使用；轴仍用 NonLinearMapping 保证单调。
+template<auto Table>
+struct TableMapping
+{
+    static constexpr bool uniform = false;
+    static constexpr auto edges = Table();
+    static_assert(edges.size() > 1, "表映射至少需要两个点");
+    static constexpr int count = static_cast<int>(edges.size()) - 1;
+    static constexpr double stop = edges.back();
+
+    [[nodiscard]] static constexpr double at(std::size_t index) noexcept { return edges[index]; }
+};
