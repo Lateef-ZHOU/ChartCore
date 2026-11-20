@@ -12,7 +12,7 @@
 Q_IMPORT_QML_PLUGIN(LidarUIPlugin)
 Q_IMPORT_QML_PLUGIN(LidarChartsPlugin)
 using TestRange = UniformMapping<0.0, 60.0, 4>;
-using TestFrequency = DopplerMapping<UniformMapping<0.0, 1.0, 3>, 1.55e-6, 1.0>;
+using TestFrequency = UniformMapping<0.0, 1.0, 3>;
 using TestSpectrum = std::shared_ptr<const Spectrum<TestRange, TestFrequency>>;
 using WrongRange = UniformMapping<0.0, 15.0, 4>;
 using WrongSurface = Spectrum<WrongRange, TestFrequency>;
