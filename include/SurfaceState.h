@@ -11,7 +11,9 @@
 #include <cmath>
 #include <chrono>
 #include <cstddef>
+#include <functional>
 #include <memory>
+#include <span>
 
 // 行为距离门、列为频点；具体规格由实例的控制器传入。
 // 行列数与两条物理轴共同构成创建期配置，只描述网格，不承载谱数据。
@@ -23,27 +25,37 @@ struct SurfaceGrid
     double rowStep = 0.0;
     double columnStart = 0.0;
     double columnStep = 0.0;
-    bool gateAxis = false;
+    std::span<const double> rowEdges{};
 
     int pointCount() const { return rows * columns; }
-    [[nodiscard]] double rowPosition(const std::size_t row) const { return rowStart + static_cast<double>(row) * rowStep; }
+    [[nodiscard]] double rowPosition(const std::size_t row) const { return rowEdges.empty() ? rowStart + static_cast<double>(row) * rowStep : rowEdges[row]; }
+    [[nodiscard]] double rowFraction(std::size_t row) const
+    {
+        if (rowEdges.empty()) return static_cast<double>(row) / (rows - 1);
+        return (rowEdges[row] - rowEdges.front()) / (rowEdges[rows - 1] - rowEdges.front());
+    }
     [[nodiscard]] double columnPosition(const std::size_t column) const
     {
         return columnStart + static_cast<double>(column) * columnStep;
     }
     [[nodiscard]] bool hasValidAxes() const
     {
-        return rows > 0 && columns > 0 && std::isfinite(rowStart) && std::isfinite(rowStep) && rowStep > 0.0
+        const bool validRows = rowEdges.empty()
+            ? std::isfinite(rowStart) && std::isfinite(rowStep) && rowStep > 0.0
+            : rowEdges.size() == static_cast<std::size_t>(rows) + 1
+                && std::ranges::all_of(rowEdges, [](double x) { return std::isfinite(x); })
+                && std::ranges::adjacent_find(rowEdges, std::greater_equal<double>{}) == rowEdges.end();
+        return rows > 0 && columns > 0 && validRows
                && std::isfinite(columnStart) && std::isfinite(columnStep) && columnStep > 0.0;
     }
     // 同一网格：行列数与两条轴的起点、步长都相同，不比较谱数据（本类型不承载元素）。
     [[nodiscard]] bool sameAxes(const SurfaceGrid &other) const
     {
-        return rows == other.rows && columns == other.columns && gateAxis == other.gateAxis
+        return rows == other.rows && columns == other.columns && rowEdges.data() == other.rowEdges.data() && rowEdges.size() == other.rowEdges.size()
                && rowStart == other.rowStart && rowStep == other.rowStep
                && columnStart == other.columnStart && columnStep == other.columnStep;
     }
-    bool operator==(const SurfaceGrid &) const = default;
+    bool operator==(const SurfaceGrid &other) const { return sameAxes(other); }
 };
 
 inline qint64 surfaceNowNs()
@@ -66,7 +78,7 @@ inline const QVector3D kSurfaceSize(2.0f, 2.0f, 1.4f);
 inline QVector2D surfaceMeshStep(SurfaceGrid grid, const QVector3D &displaySize)
 {
     // 只规定显示密度：较长的水平边约十格。按每个采样间隔的世界长度换算，
-    // 取最近整数且不小于一，网线因此落在真实行列上；不随视角或缩放跳档。
+    // 取最近整数且不小于一，网线按物理坐标等距划分；不随视角或缩放跳档。
     const float spacing = std::max(displaySize.x(), displaySize.y()) / 10.0f;
     return {std::max(1.0f, std::round((grid.columns - 1) * spacing / displaySize.x())),
             std::max(1.0f, std::round((grid.rows - 1) * spacing / displaySize.y()))};

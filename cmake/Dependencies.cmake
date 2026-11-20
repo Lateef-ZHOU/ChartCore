@@ -11,7 +11,7 @@ endif()
 if(NOT TARGET Lidar::FamilyModels)
     FetchContent_Declare(lidar_familymodels
         GIT_REPOSITORY https://github.com/Lateef-ZHOU/TaskCore.git
-        GIT_TAG 6c1ccc3b9eb7e2c1c4c4c59ec150471782a129eb
+        GIT_TAG 9de615c13ec99831e61933a303fcbd83f059cfba
         SOURCE_SUBDIR models)
     FetchContent_MakeAvailable(lidar_familymodels)
 endif()

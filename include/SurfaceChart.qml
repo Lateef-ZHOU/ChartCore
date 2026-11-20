@@ -12,12 +12,12 @@ Item {
     // 图窗坐标在创建时交入；具体帧保留静态规格直到绘图数值边界。
     required property real rowStart
     required property real rowStep
-    property bool gateAxis: false
+    property var rowEdges
     required property real columnStart
     required property real columnStep
     required property real maxPower
     readonly property var plotConfiguration: ({rows: rows, columns: columns, rowStart: rowStart,
-        rowStep: rowStep, columnStart: columnStart, columnStep: columnStep, gateAxis: gateAxis})
+        rowStep: rowStep, columnStart: columnStart, columnStep: columnStep, rowEdges: rowEdges})
     readonly property real valLo: state.low
     readonly property real valHi: state.high
     readonly property int receivedCount: state.received

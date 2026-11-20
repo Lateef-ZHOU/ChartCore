@@ -39,7 +39,6 @@ struct DAQChartSpecification
         else
         {
             result.insert("rangeEdges", QVariant::fromValue(StaticRangeEdges{P.range.edges}));
-            result.insert("spectrumByGate", true);
         }
         return result;
     }

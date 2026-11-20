@@ -18,9 +18,9 @@ ColumnLayout {
         Layout.fillHeight: true
         rows: root.specification.rows
         columns: root.specification.columns
-        gateAxis: root.specification.spectrumByGate === true
-        rowStart: gateAxis ? 0 : root.specification.rangeStart
-        rowStep: gateAxis ? 1 : root.specification.gateSpacing
+        rowEdges: root.specification.rangeEdges
+        rowStart: root.specification.rangeStart ?? 0
+        rowStep: root.specification.gateSpacing ?? 1
         columnStart: root.specification.freqStart
         columnStep: root.specification.freqStep
         maxPower: root.specification.powerMax

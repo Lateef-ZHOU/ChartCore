@@ -7,6 +7,7 @@
 #include "SurfaceState.h"
 #include "SurfaceAxes.h"
 #include "SurfaceData.h"
+#include "DAQChartSpecification.h"
 #include "DAQFamily/DAQChannelSpec.h"
 #include <QColor>
 #include <QFile>
@@ -131,8 +132,8 @@ protected:
             timing.delayedWindowGpuMs = commands->lastCompletedGpuTime() * 1000.0;
         auto *updates = rhi_->nextResourceUpdateBatch();
         const bool hasSurface = !surface_.heights.isEmpty() && surface_.heights.size() == surface_.grid.pointCount();
-        if (hasSurface && grid_ != surface_.grid) {
-            grid_ = surface_.grid;
+        if (hasSurface && grid_ != *surface_.axes) {
+            grid_ = *surface_.axes;
             indexCount_ = (grid_.rows - 1) * (grid_.columns - 1) * 6;
             heights_.reset(rhi_->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer, grid_.pointCount() * sizeof(float)));
             positions_.reset(rhi_->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, grid_.pointCount() * 2 * sizeof(float)));
@@ -144,9 +145,10 @@ protected:
             xy.reserve(grid_.pointCount() * 2);
             indices.reserve(indexCount_);
             for (int row = 0; row < grid_.rows; ++row) {
+                const float y = static_cast<float>(2 * grid_.rowFraction(row) - 1);
                 for (int col = 0; col < grid_.columns; ++col) {
                     xy.append(2.0f * col / (grid_.columns - 1) - 1.0f);
-                    xy.append(2.0f * row / (grid_.rows - 1) - 1.0f);
+                    xy.append(y);
                     if (row + 1 < grid_.rows && col + 1 < grid_.columns) {
                         const auto a = static_cast<quint32>(row * grid_.columns + col);
                         const auto b = a + grid_.columns;
@@ -248,8 +250,10 @@ public:
     // 创建期配置：QML 必填，组件完成后固定。
     QVariantMap configuration() const
     {
-        return {{"rows", axes_->rows}, {"columns", axes_->columns}, {"rowStart", axes_->rowStart}, {"rowStep", axes_->rowStep},
-                {"columnStart", axes_->columnStart}, {"columnStep", axes_->columnStep}, {"gateAxis", axes_->gateAxis}};
+        QVariantMap result{{"rows", axes_->rows}, {"columns", axes_->columns}, {"rowStart", axes_->rowStart}, {"rowStep", axes_->rowStep},
+                           {"columnStart", axes_->columnStart}, {"columnStep", axes_->columnStep}};
+        if (!axes_->rowEdges.empty()) result.insert("rowEdges", QVariant::fromValue(StaticRangeEdges{axes_->rowEdges}));
+        return result;
     }
     void setConfiguration(const QVariantMap &value)
     {
@@ -260,12 +264,14 @@ public:
         }
         const SurfaceGrid grid{value.value("rows").toInt(), value.value("columns").toInt()};
         // 创建时固定坐标轴，收到谱时核对其规格与配置一致。
+        const auto rowEdges = value.value("rowEdges");
+        const auto edges = rowEdges.value<StaticRangeEdges>().values;
         auto axes = std::make_shared<const SurfaceGrid>(grid.rows, grid.columns, value.value("rowStart").toDouble(),
                                          value.value("rowStep").toDouble(), value.value("columnStart").toDouble(),
-                                         value.value("columnStep").toDouble(), value.value("gateAxis").toBool());
+                                         value.value("columnStep").toDouble(), edges);
         if (grid.rows < 2 || grid.columns < 2 || qint64(grid.rows) * grid.columns > std::numeric_limits<int>::max() / 6
             || !value.value("rowStart").isValid() || !value.value("columnStart").isValid() || !axes->hasValidAxes()
-            || (axes->gateAxis && (axes->rowStart != 0.0 || axes->rowStep != 1.0)))
+            || (rowEdges.isValid() && edges.empty()))
             qFatal("Invalid surface grid.");
         grid_ = grid;
         axes_ = axes;
@@ -282,14 +288,12 @@ public:
         if (axes_->rows != P.rangeGateCount || axes_->columns != P.frequencyBinCount
             || axes_->columnStart != P.frequencyStartMHz || axes_->columnStep != P.frequencyStepMHz)
             return false;
-        if (!axes_->gateAxis)
+        if constexpr (P.uniformRange)
         {
-            if constexpr (P.uniformRange)
-            {
-                if (axes_->rowStart != P.rangeStartM || axes_->rowStep != P.rangeStepM) return false;
-            }
-            else return false;
+            if (!axes_->rowEdges.empty() || axes_->rowStart != P.rangeStartM || axes_->rowStep != P.rangeStepM)
+                return false;
         }
+        else if (axes_->rowEdges.data() != P.range.edges.data()) return false;
         return setValues({values->begin(), values->size()}, low, high);
     }
 private:

@@ -149,14 +149,14 @@ inline QVector<double> ticks(double low, double high, int target)
     return values;
 }
 
-// 列为频率（MHz）；行可采用斜距或距离门编号，端点为首末格点的位置。
+// 列为频率（MHz）；行为斜距（m），端点为首末格点的位置。
 inline Scene makeScene(const Projection &projection, const SurfaceGrid &grid, double zMin, double zMax,
                        const QFont &font)
 {
     Scene scene;
     scene.axes = placeAxes(projection);
     scene.scales = {{QStringLiteral("频率 (MHz)"), grid.columnPosition(0), grid.columnPosition(grid.columns - 1), {}},
-                    {grid.gateAxis ? QStringLiteral("距离门") : QStringLiteral("斜距 (m)"),
+                    {QStringLiteral("斜距 (m)"),
                      grid.rowPosition(0), grid.rowPosition(grid.rows - 1), {}},
                     {QStringLiteral("功率谱值"), zMin, zMax, {}}};
     const QFontMetricsF metrics(font);
