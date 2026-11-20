@@ -33,8 +33,8 @@ struct DAQChartSpecification
         result.insert("rangeStop", P.rangeStopM());
         if constexpr (P.uniformRange)
         {
-            result.insert("rangeStart", P.rangeStartM);
-            result.insert("gateSpacing", P.rangeStepM);
+            result.insert("rangeStart", P.range.start);
+            result.insert("gateSpacing", P.range.step);
         }
         else
         {

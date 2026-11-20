@@ -290,7 +290,7 @@ public:
             return false;
         if constexpr (P.uniformRange)
         {
-            if (!axes_->rowEdges.empty() || axes_->rowStart != P.rangeStartM || axes_->rowStep != P.rangeStepM)
+            if (!axes_->rowEdges.empty() || axes_->rowStart != P.range.start || axes_->rowStep != P.range.step)
                 return false;
         }
         else if (axes_->rowEdges.data() != P.range.edges.data()) return false;

@@ -11,13 +11,17 @@
 #include <QtQml/QQmlExtensionPlugin>
 Q_IMPORT_QML_PLUGIN(LidarUIPlugin)
 Q_IMPORT_QML_PLUGIN(LidarChartsPlugin)
-inline constexpr DAQParams TestSpec{
+inline constexpr DAQParams<UniformRangeMapping<0.0, 240.0, 4>> TestSpec{
     .wavelengthM = 1.55e-6, .zeroWindMHz = 1,
-    .rangeStartM = 0, .rangeStepM = 60, .frequencyStartMHz = 0, .frequencyStepMHz = 1,
-    .rangeGateCount = 4, .frequencyBinCount = 3,
+    .frequencyStartMHz = 0, .frequencyStepMHz = 1,
+    .frequencyBinCount = 3,
 };
 using TestSpectrum = std::shared_ptr<const Spectrum<TestSpec>>;
-inline constexpr auto WrongSurfaceSpec = [] { auto params = TestSpec; params.rangeStepM = 15; return params; }();
+inline constexpr DAQParams<UniformRangeMapping<0.0, 60.0, 4>> WrongSurfaceSpec{
+    .wavelengthM = 1.55e-6, .zeroWindMHz = 1,
+    .frequencyStartMHz = 0, .frequencyStepMHz = 1,
+    .frequencyBinCount = 3,
+};
 class TestSurface : public SurfaceItem {
     Q_OBJECT
 public:

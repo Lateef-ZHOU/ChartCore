@@ -131,7 +131,7 @@ private:
         if (data.size() != static_cast<std::size_t>(rowCount_)) return;
         if constexpr (P.uniformRange)
         {
-            if (!edges_.empty() || P.rangeStartM != rangeStart_ || P.rangeStepM != distPerBin_) return;
+            if (!edges_.empty() || P.range.start != rangeStart_ || P.range.step != distPerBin_) return;
         }
         else if (edges_.data() != P.range.edges.data()) return;
         QList<QPointF> &points = series_[0].points;
