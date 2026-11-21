@@ -129,7 +129,8 @@ private:
     template<class Range>
     void setValues(std::span<const double> data)
     {
-        constexpr int mask = Range::mask;
+        if (rowCount_ < 0 || rowCount_ > Range::count) return;
+        const int mask = Range::count - rowCount_; // 遮蔽是绘图配置：图上第 0 门对应模型第 mask 门
         const std::span<const double> visible = data.subspan(static_cast<std::size_t>(mask));
         if (visible.size() != static_cast<std::size_t>(rowCount_)) return;
         if constexpr (Range::uniform)

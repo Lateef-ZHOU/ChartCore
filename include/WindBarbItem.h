@@ -131,6 +131,8 @@ protected:
     virtual std::span<const std::optional<LinAlg::Vec3>> columnValues(int i) const = 0;
     virtual void resetHistory(std::size_t capacity) = 0;
     int minimumLayers() const { return heightBins_; }
+    // 绘图遮蔽：图上第 0 门对应模型第 rangeMask 门。
+    [[nodiscard]] int rangeMask() const { return rangeMask_; }
     void columnAccepted(RxTime at)
     {
         noteLastX(std::chrono::duration<double>(at.time_since_epoch()).count());
@@ -487,12 +489,14 @@ protected:
         const double window = value.value("windowSeconds").toDouble();
         const double column = value.value("columnSeconds").toDouble();
         const double height = value.value("maxHeight").toDouble();
+        const int mask = value.value("rangeMask").toInt();
         const double capacity = std::ceil(kRingOverWindow * window / column);
-        if (bins < 1 || !std::isfinite(window) || !std::isfinite(column) || !std::isfinite(height)
+        if (bins < 1 || mask < 0 || !std::isfinite(window) || !std::isfinite(column) || !std::isfinite(height)
             || window <= 0 || column <= 0 || height <= 0 || !std::isfinite(capacity)
             || capacity > std::numeric_limits<int>::max())
             qFatal("Invalid wind barb configuration.");
         heightBins_ = bins;
+        rangeMask_ = mask;
         columnSeconds_ = column;
         maxHeightM_ = height;
         resetHistory(static_cast<std::size_t>(capacity));
@@ -502,6 +506,7 @@ protected:
     }
 private:
     int heightBins_ = 1;
+    int rangeMask_ = 0; // 绘图遮蔽：图上第 0 门对应模型第 rangeMask 门
     double columnSeconds_ = 1;
     double maxHeightM_ = 1;
 
@@ -524,11 +529,7 @@ class WindBarbItem : public WindBarbChart
         if constexpr (requires { Frame::axis.uniform; }) return Frame::axis.uniform;
         else return true;
     }();
-    // 镜面之前的门不画；没有遮蔽信息的帧按 0 处理。
-    static constexpr int frameMask = [] {
-        if constexpr (requires { Frame::axis.mask; }) return static_cast<int>(Frame::axis.mask);
-        else return 0;
-    }();
+
     [[nodiscard]] static double heightAt(const Frame &frame, const std::size_t index)
     {
         if constexpr (requires { frame.position(index); }) return frame.position(index);
@@ -543,7 +544,7 @@ public:
     void appendColumn(std::shared_ptr<const Frame> profile)
     {
         if (!profile) return;
-        constexpr int mask = frameMask;
+        const int mask = rangeMask();
         const auto values = profile->values();
         if (values.size() <= static_cast<std::size_t>(mask)
             || values.size() - static_cast<std::size_t>(mask) < static_cast<std::size_t>(minimumLayers())
@@ -562,7 +563,7 @@ public:
 protected:
     int columnCount() const override { return static_cast<int>(history_->size()); }
     RxTime columnTime(int i) const override { return history_->at(i)->at; }
-    double columnStart(int i) const override { return heightAt(*history_->at(i), static_cast<std::size_t>(frameMask)); }
+    double columnStart(int i) const override { return heightAt(*history_->at(i), static_cast<std::size_t>(rangeMask())); }
     double columnStep(int i) const override
     {
         if constexpr (uniformGrid) return history_->at(i)->step();
@@ -576,10 +577,10 @@ protected:
     std::span<const double> rangeEdges() const override
     {
         if constexpr (uniformGrid) return {};
-        else return std::span<const double>(Frame::axis.edges).subspan(frameMask);
+        else return std::span<const double>(Frame::axis.edges).subspan(rangeMask());
     }
     std::span<const std::optional<LinAlg::Vec3>> columnValues(int i) const override
-    { return history_->at(i)->values().subspan(frameMask); }
+    { return history_->at(i)->values().subspan(rangeMask()); }
     void resetHistory(std::size_t capacity) override { history_ = std::make_unique<History>(capacity); }
 private:
     using History = WallClockHistory<std::shared_ptr<const Frame>,

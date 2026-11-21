@@ -28,25 +28,26 @@ struct DAQChartSpecification
 
     // 小规格表交 QML 装配。静态网格的行是斜距（m），列是频率（MHz）。
     template<class Range, class Frequency> requires IncreasingAxis<Range> && IncreasingAxis<Frequency>
-    static QVariantMap make(int windMin, int windMax, double powerMax)
+    static QVariantMap make(int windMin, int windMax, double powerMax, int rangeMask = 0)
     {
         static_assert(Frequency::uniform, "绘图列轴暂只支持均匀频率");
-        static_assert(Range::mask >= 0 && Range::mask < Range::count, "遮蔽门数必须落在距离轴内");
-        constexpr int rows = Range::count - Range::mask;
+        if (rangeMask < 0 || rangeMask >= Range::count) return {};
+        const int rows = Range::count - rangeMask;
         QVariantMap result{{"rows", rows}, {"columns", Frequency::count},
                 {"freqStart", Frequency::start}, {"freqStep", Frequency::step},
                 {"windMin", windMin}, {"windMax", windMax}, {"powerMax", powerMax},
                 {"cnrMin", kPlt2dCnrMin}, {"cnrMax", kPlt2dCnrMax},
-                {"barbWindow", kBarbWindowSec}, {"barbColumn", kBarbColumnSec}};
+                {"barbWindow", kBarbWindowSec}, {"barbColumn", kBarbColumnSec},
+                {"rangeMask", rangeMask}};
         result.insert("rangeStop", Range::stop);
         if constexpr (Range::uniform)
         {
-            result.insert("rangeStart", Range::at(Range::mask));
+            result.insert("rangeStart", Range::at(rangeMask));
             result.insert("gateSpacing", Range::step);
         }
         else
         {
-            result.insert("rangeEdges", QVariant::fromValue(StaticRangeEdges{std::span<const double>(Range::edges).subspan(Range::mask)}));
+            result.insert("rangeEdges", QVariant::fromValue(StaticRangeEdges{std::span<const double>(Range::edges).subspan(rangeMask)}));
         }
         return result;
     }

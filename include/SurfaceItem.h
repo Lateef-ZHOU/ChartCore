@@ -285,9 +285,10 @@ public:
     {
         if (!values) return false;
         static_assert(Frequency::uniform, "绘图列轴暂只支持均匀频率");
-        constexpr int mask = Range::mask;
+        if (axes_->rows > Range::count) return false;
+        const int mask = Range::count - axes_->rows; // 遮蔽是绘图配置：图上第 0 门对应模型第 mask 门
         // QML 创建配置仍是运行期边界，不能将另一规格的数组按本图尺寸重排。
-        if (axes_->rows != Range::count - mask || axes_->columns != Frequency::count
+        if (axes_->columns != Frequency::count
             || axes_->columnStart != Frequency::start || axes_->columnStep != Frequency::step)
             return false;
         if constexpr (Range::uniform)
