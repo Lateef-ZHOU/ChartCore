@@ -31,7 +31,9 @@ struct DAQChartSpecification
     static QVariantMap make(int windMin, int windMax, double powerMax)
     {
         static_assert(Frequency::uniform, "绘图列轴暂只支持均匀频率");
-        QVariantMap result{{"rows", Range::count}, {"columns", Frequency::count},
+        static_assert(Range::mask >= 0 && Range::mask < Range::count, "遮蔽门数必须落在距离轴内");
+        constexpr int rows = Range::count - Range::mask;
+        QVariantMap result{{"rows", rows}, {"columns", Frequency::count},
                 {"freqStart", Frequency::start}, {"freqStep", Frequency::step},
                 {"windMin", windMin}, {"windMax", windMax}, {"powerMax", powerMax},
                 {"cnrMin", kPlt2dCnrMin}, {"cnrMax", kPlt2dCnrMax},
@@ -39,12 +41,12 @@ struct DAQChartSpecification
         result.insert("rangeStop", Range::stop);
         if constexpr (Range::uniform)
         {
-            result.insert("rangeStart", Range::start);
+            result.insert("rangeStart", Range::at(Range::mask));
             result.insert("gateSpacing", Range::step);
         }
         else
         {
-            result.insert("rangeEdges", QVariant::fromValue(StaticRangeEdges{Range::edges}));
+            result.insert("rangeEdges", QVariant::fromValue(StaticRangeEdges{std::span<const double>(Range::edges).subspan(Range::mask)}));
         }
         return result;
     }

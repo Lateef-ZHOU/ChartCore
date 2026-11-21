@@ -129,18 +129,20 @@ private:
     template<class Range>
     void setValues(std::span<const double> data)
     {
-        if (data.size() != static_cast<std::size_t>(rowCount_)) return;
+        constexpr int mask = Range::mask;
+        const std::span<const double> visible = data.subspan(static_cast<std::size_t>(mask));
+        if (visible.size() != static_cast<std::size_t>(rowCount_)) return;
         if constexpr (Range::uniform)
         {
-            if (!edges_.empty() || Range::start != rangeStart_ || Range::step != distPerBin_) return;
+            if (!edges_.empty() || Range::at(mask) != rangeStart_ || Range::step != distPerBin_) return;
         }
-        else if (edges_.data() != Range::edges.data()) return;
+        else if (edges_.data() != std::span<const double>(Range::edges).subspan(mask).data()) return;
         QList<QPointF> &points = series_[0].points;
         breaks_.clear();
         for (int k = 0; k < rowCount_; ++k)
         {
-            points[k].setX(data[k]);
-            if (!std::isfinite(data[k]) && (k == 0 || std::isfinite(data[k - 1])))
+            points[k].setX(visible[k]);
+            if (!std::isfinite(visible[k]) && (k == 0 || std::isfinite(visible[k - 1])))
                 breaks_.append(k);
         }
         dataChanged(); // 只换了值；两轴的界不随这一帧数据动

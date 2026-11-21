@@ -524,6 +524,16 @@ class WindBarbItem : public WindBarbChart
         if constexpr (requires { Frame::axis.uniform; }) return Frame::axis.uniform;
         else return true;
     }();
+    // 镜面之前的门不画；没有遮蔽信息的帧按 0 处理。
+    static constexpr int frameMask = [] {
+        if constexpr (requires { Frame::axis.mask; }) return static_cast<int>(Frame::axis.mask);
+        else return 0;
+    }();
+    [[nodiscard]] static double heightAt(const Frame &frame, const std::size_t index)
+    {
+        if constexpr (requires { frame.position(index); }) return frame.position(index);
+        else return frame.start() + frame.step() * static_cast<double>(index);
+    }
 public:
     explicit WindBarbItem(QQuickItem *parent = nullptr)
         : WindBarbItem(QVariantMap{{"heightBins", 1}, {"windowSeconds", 1.0},
@@ -533,16 +543,18 @@ public:
     void appendColumn(std::shared_ptr<const Frame> profile)
     {
         if (!profile) return;
+        constexpr int mask = frameMask;
         const auto values = profile->values();
-        if (values.empty() || values.size() < static_cast<std::size_t>(minimumLayers())
-            || !std::isfinite(profile->start())) return;
+        if (values.size() <= static_cast<std::size_t>(mask)
+            || values.size() - static_cast<std::size_t>(mask) < static_cast<std::size_t>(minimumLayers())
+            || !std::isfinite(heightAt(*profile, static_cast<std::size_t>(mask)))) return;
         if constexpr (uniformGrid)
         {
             const auto spacing = profile->step();
             if (!std::isfinite(spacing) || spacing <= 0.0
-                || !std::isfinite(profile->start() + spacing * (values.size() - 1))) return;
+                || !std::isfinite(heightAt(*profile, values.size() - 1))) return;
         }
-        else if (!(profile->scale > 0.0) || !std::isfinite(profile->position(values.size() - 1))) return;
+        else if (!(profile->scale > 0.0) || !std::isfinite(heightAt(*profile, values.size() - 1))) return;
         const auto at = profile->at;
         if (!history_->append(std::move(profile))) return;
         columnAccepted(at);
@@ -550,7 +562,7 @@ public:
 protected:
     int columnCount() const override { return static_cast<int>(history_->size()); }
     RxTime columnTime(int i) const override { return history_->at(i)->at; }
-    double columnStart(int i) const override { return history_->at(i)->start(); }
+    double columnStart(int i) const override { return heightAt(*history_->at(i), static_cast<std::size_t>(frameMask)); }
     double columnStep(int i) const override
     {
         if constexpr (uniformGrid) return history_->at(i)->step();
@@ -564,10 +576,10 @@ protected:
     std::span<const double> rangeEdges() const override
     {
         if constexpr (uniformGrid) return {};
-        else return Frame::axis.edges;
+        else return std::span<const double>(Frame::axis.edges).subspan(frameMask);
     }
     std::span<const std::optional<LinAlg::Vec3>> columnValues(int i) const override
-    { return history_->at(i)->values(); }
+    { return history_->at(i)->values().subspan(frameMask); }
     void resetHistory(std::size_t capacity) override { history_ = std::make_unique<History>(capacity); }
 private:
     using History = WallClockHistory<std::shared_ptr<const Frame>,

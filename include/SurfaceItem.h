@@ -285,17 +285,19 @@ public:
     {
         if (!values) return false;
         static_assert(Frequency::uniform, "绘图列轴暂只支持均匀频率");
+        constexpr int mask = Range::mask;
         // QML 创建配置仍是运行期边界，不能将另一规格的数组按本图尺寸重排。
-        if (axes_->rows != Range::count || axes_->columns != Frequency::count
+        if (axes_->rows != Range::count - mask || axes_->columns != Frequency::count
             || axes_->columnStart != Frequency::start || axes_->columnStep != Frequency::step)
             return false;
         if constexpr (Range::uniform)
         {
-            if (!axes_->rowEdges.empty() || axes_->rowStart != Range::start || axes_->rowStep != Range::step)
+            if (!axes_->rowEdges.empty() || axes_->rowStart != Range::at(mask) || axes_->rowStep != Range::step)
                 return false;
         }
-        else if (axes_->rowEdges.data() != Range::edges.data()) return false;
-        return setValues({values->begin(), values->size()}, low, high);
+        else if (axes_->rowEdges.data() != std::span<const double>(Range::edges).subspan(mask).data()) return false;
+        const std::span<const double> all(values->begin(), values->size());
+        return setValues(all.subspan(static_cast<std::size_t>(mask) * Frequency::count), low, high);
     }
 private:
     // 已到数值绘制边界，借用仅持续到本次调用结束；原帧由调用方保活。
