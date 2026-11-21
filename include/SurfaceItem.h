@@ -252,7 +252,7 @@ public:
     {
         QVariantMap result{{"rows", axes_->rows}, {"columns", axes_->columns}, {"rowStart", axes_->rowStart}, {"rowStep", axes_->rowStep},
                            {"columnStart", axes_->columnStart}, {"columnStep", axes_->columnStep}};
-        if (!axes_->rowEdges.empty()) result.insert("rowEdges", QVariant::fromValue(StaticRangeEdges{axes_->rowEdges}));
+        if (!axes_->rowEdges.empty()) result.insert("rowEdges", QVariant::fromValue(StaticRangeEdges{std::vector<double>(axes_->rowEdges.begin(), axes_->rowEdges.end())}));
         return result;
     }
     void setConfiguration(const QVariantMap &value)
@@ -265,7 +265,8 @@ public:
         const SurfaceGrid grid{value.value("rows").toInt(), value.value("columns").toInt()};
         // 创建时固定坐标轴，收到谱时核对其规格与配置一致。
         const auto rowEdges = value.value("rowEdges");
-        const auto edges = rowEdges.value<StaticRangeEdges>().values;
+        rowEdgeBuffer_ = rowEdges.value<StaticRangeEdges>().values;
+        const std::span<const double> edges(rowEdgeBuffer_);
         auto axes = std::make_shared<const SurfaceGrid>(grid.rows, grid.columns, value.value("rowStart").toDouble(),
                                          value.value("rowStep").toDouble(), value.value("columnStart").toDouble(),
                                          value.value("columnStep").toDouble(), edges);
@@ -286,17 +287,25 @@ public:
         if (!values) return false;
         static_assert(Frequency::uniform, "绘图列轴暂只支持均匀频率");
         if (axes_->rows > Range::count) return false;
-        const int mask = Range::count - axes_->rows; // 遮蔽是绘图配置：图上第 0 门对应模型第 mask 门
+        const int mask = Range::count - axes_->rows; // 遮蔽是绘图配置：图上 0 m 对应模型第 mask 门
         // QML 创建配置仍是运行期边界，不能将另一规格的数组按本图尺寸重排。
         if (axes_->columns != Frequency::count
             || axes_->columnStart != Frequency::start || axes_->columnStep != Frequency::step)
             return false;
         if constexpr (Range::uniform)
         {
-            if (!axes_->rowEdges.empty() || axes_->rowStart != Range::at(mask) || axes_->rowStep != Range::step)
+            if (!axes_->rowEdges.empty() || axes_->rowStart != (mask == 0 ? Range::start : 0.0)
+                || axes_->rowStep != Range::step)
                 return false;
         }
-        else if (axes_->rowEdges.data() != std::span<const double>(Range::edges).subspan(mask).data()) return false;
+        else
+        {
+            std::vector<double> expected;
+            expected.reserve(static_cast<std::size_t>(axes_->rows) + 1);
+            const double origin = mask == 0 ? 0.0 : Range::at(mask);
+            for (int i = mask; i <= Range::count; ++i) expected.push_back(Range::edges[i] - origin);
+            if (!std::ranges::equal(axes_->rowEdges, expected)) return false;
+        }
         const std::span<const double> all(values->begin(), values->size());
         return setValues(all.subspan(static_cast<std::size_t>(mask) * Frequency::count), low, high);
     }
@@ -378,6 +387,7 @@ private:
     }
     SurfaceGrid grid_{2, 2};
     std::shared_ptr<const SurfaceGrid> axes_ = std::make_shared<const SurfaceGrid>(); // 配置给出的初始网格（不带元素）
+    std::vector<double> rowEdgeBuffer_; // 遮蔽后轴坐标的存储（SurfaceGrid 借用）
     SurfaceAxesItem *const axisItem_;
     PreparedSurface surface_;
     SurfaceCamera camera_;

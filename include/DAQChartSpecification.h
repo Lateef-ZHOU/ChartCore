@@ -1,11 +1,12 @@
 #pragma once
 #include <QVariantMap>
+#include <vector>
 #include "AxisMapping.h"
 
 // 只借用型号的静态距离门边界，QML 仅转交此值。
 struct StaticRangeEdges
 {
-    std::span<const double> values;
+    std::vector<double> values; // 遮蔽后的轴坐标（已归零），配置期构造一次
 };
 Q_DECLARE_METATYPE(StaticRangeEdges)
 
@@ -33,21 +34,25 @@ struct DAQChartSpecification
         static_assert(Frequency::uniform, "绘图列轴暂只支持均匀频率");
         if (rangeMask < 0 || rangeMask >= Range::count) return {};
         const int rows = Range::count - rangeMask;
+        const double origin = rangeMask == 0 ? 0.0 : Range::at(rangeMask); // 第 rangeMask 门当图上的 0 m
         QVariantMap result{{"rows", rows}, {"columns", Frequency::count},
                 {"freqStart", Frequency::start}, {"freqStep", Frequency::step},
                 {"windMin", windMin}, {"windMax", windMax}, {"powerMax", powerMax},
                 {"cnrMin", kPlt2dCnrMin}, {"cnrMax", kPlt2dCnrMax},
                 {"barbWindow", kBarbWindowSec}, {"barbColumn", kBarbColumnSec},
                 {"rangeMask", rangeMask}};
-        result.insert("rangeStop", Range::stop);
+        result.insert("rangeStop", Range::stop - origin);
         if constexpr (Range::uniform)
         {
-            result.insert("rangeStart", Range::at(rangeMask));
+            result.insert("rangeStart", rangeMask == 0 ? Range::start : 0.0);
             result.insert("gateSpacing", Range::step);
         }
         else
         {
-            result.insert("rangeEdges", QVariant::fromValue(StaticRangeEdges{std::span<const double>(Range::edges).subspan(rangeMask)}));
+            std::vector<double> edges;
+            edges.reserve(static_cast<std::size_t>(rows) + 1);
+            for (int i = rangeMask; i <= Range::count; ++i) edges.push_back(Range::edges[i] - origin);
+            result.insert("rangeEdges", QVariant::fromValue(StaticRangeEdges{std::move(edges)}));
         }
         return result;
     }

@@ -72,7 +72,7 @@ public:
                 {"color", series_[0].color},
                 {"rightAxis", yOnRight()}};
         if (!edges_.empty())
-            result.insert("rangeEdges", QVariant::fromValue(StaticRangeEdges{edges_}));
+            result.insert("rangeEdges", QVariant::fromValue(StaticRangeEdges{std::vector<double>(edges_.begin(), edges_.end())}));
         return result;
     }
     void setConfiguration(const QVariantMap &value)
@@ -86,7 +86,8 @@ public:
         const double start = value.value("rangeStart").toDouble();
         const double spacing = value.value("gateSpacing").toDouble();
         const auto edgeValue = value.value("rangeEdges");
-        const auto edges = edgeValue.value<StaticRangeEdges>().values;
+        edgeBuffer_ = edgeValue.value<StaticRangeEdges>().values;
+        const std::span<const double> edges(edgeBuffer_);
         const int low = value.value("minimum").toInt(), high = value.value("maximum").toInt();
         if (rows < 1 || high <= low)
             qFatal("Invalid wind profile configuration.");
@@ -98,7 +99,7 @@ public:
         else if (!value.value("rangeStart").isValid() || !std::isfinite(start) || !std::isfinite(spacing) || spacing <= 0)
             qFatal("Invalid uniform wind profile configuration.");
         rowCount_ = rows;
-        edges_ = edges;
+        edges_ = edgeBuffer_;
         rangeStart_ = start;
         distPerBin_ = spacing;
         valLo_ = low;
@@ -135,9 +136,17 @@ private:
         if (visible.size() != static_cast<std::size_t>(rowCount_)) return;
         if constexpr (Range::uniform)
         {
-            if (!edges_.empty() || Range::at(mask) != rangeStart_ || Range::step != distPerBin_) return;
+            if (!edges_.empty() || rangeStart_ != (mask == 0 ? Range::start : 0.0)
+                || Range::step != distPerBin_) return;
         }
-        else if (edges_.data() != std::span<const double>(Range::edges).subspan(mask).data()) return;
+        else
+        {
+            std::vector<double> expected;
+            expected.reserve(static_cast<std::size_t>(rowCount_) + 1);
+            const double origin = mask == 0 ? 0.0 : Range::at(mask);
+            for (int i = mask; i <= Range::count; ++i) expected.push_back(Range::edges[i] - origin);
+            if (!std::ranges::equal(edges_, expected)) return;
+        }
         QList<QPointF> &points = series_[0].points;
         breaks_.clear();
         for (int k = 0; k < rowCount_; ++k)
@@ -221,6 +230,7 @@ private:
     QList<int> breaks_; // 每次推送建立缺测段起点索引，抽稀不能跨过缺测段连线。
     int rowCount_ = 1;
     std::span<const double> edges_;
+    std::vector<double> edgeBuffer_; // 遮蔽后轴坐标的存储（edges_ 借用）
     double rangeStart_ = 0;
     double distPerBin_ = 1;
     int valLo_ = 0; // 值轴量程（型号宪法给的），界恒等于它

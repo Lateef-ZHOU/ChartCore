@@ -127,6 +127,7 @@ protected:
     virtual double columnStart(int i) const = 0;
     virtual double columnStep(int i) const = 0;
     virtual double columnHeightScale(int i) const = 0;
+    virtual double columnBase(int) const { return 0.0; } // 图上 0 m 对应的绝对高度（遮蔽后归零）
     virtual std::span<const double> rangeEdges() const = 0;
     virtual std::span<const std::optional<LinAlg::Vec3>> columnValues(int i) const = 0;
     virtual void resetHistory(std::size_t capacity) = 0;
@@ -219,7 +220,8 @@ protected:
                 const auto values = columnValues(c);
                 const double start = columnStart(c), step = columnStep(c);
                 const double scale = edges.empty() ? 0.0 : columnHeightScale(c);
-                const auto height = [&](std::size_t k) { return edges.empty() ? start + k * step : edges[k] * scale; };
+                const double base = columnBase(c);
+                const auto height = [&](std::size_t k) { return (edges.empty() ? start + k * step : edges[k] * scale) - base; };
                 const double x = xAxis_.toPixel((timeBinOf(timeAt(c)) + 0.5) * binSec, plot.left(), plot.right());
                 if (edges.empty())
                     ChartThinning::thinUniform(start, step, static_cast<int>(values.size()), yAxis_.lo, yAxis_.hi, binM, 1, gatePick_);
@@ -302,28 +304,30 @@ private:
     [[nodiscard]] double columnBottom(const int i) const
     {
         const auto values = columnValues(i);
-        if (values.empty()) return columnStart(i);
+        const double base = columnBase(i);
+        if (values.empty()) return columnStart(i) - base;
         const auto edges = rangeEdges();
         const double first = columnStart(i);
         if (edges.empty())
-            return std::min(first, first + columnStep(i) * static_cast<double>(values.size() - 1));
+            return std::min(first, first + columnStep(i) * static_cast<double>(values.size() - 1)) - base;
         const double scale = columnHeightScale(i);
         double low = edges[0] * scale;
         for (std::size_t k = 1; k < values.size(); ++k) low = std::min(low, edges[k] * scale);
-        return low;
+        return low - base;
     }
     [[nodiscard]] double columnTop(const int i) const
     {
         const auto values = columnValues(i);
-        if (values.empty()) return columnStart(i);
+        const double base = columnBase(i);
+        if (values.empty()) return columnStart(i) - base;
         const auto edges = rangeEdges();
         const double first = columnStart(i);
         if (edges.empty())
-            return std::max(first, first + columnStep(i) * static_cast<double>(values.size() - 1));
+            return std::max(first, first + columnStep(i) * static_cast<double>(values.size() - 1)) - base;
         const double scale = columnHeightScale(i);
         double high = edges[0] * scale;
         for (std::size_t k = 1; k < values.size(); ++k) high = std::max(high, edges[k] * scale);
-        return high;
+        return high - base;
     }
     [[nodiscard]] double timeAt(const int column) const
     {
@@ -574,6 +578,8 @@ protected:
         if constexpr (uniformGrid) return 0.0;
         else return history_->at(i)->scale;
     }
+    double columnBase(int i) const override
+    { return heightAt(*history_->at(i), static_cast<std::size_t>(rangeMask())); }
     std::span<const double> rangeEdges() const override
     {
         if constexpr (uniformGrid) return {};
